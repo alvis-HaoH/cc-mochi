@@ -1,0 +1,405 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>cc-mochi expression preview</title>
+  <style>
+    :root {
+      --paper: #f7f4ea;
+      --ink: #181716;
+      --muted: #706b62;
+      --line: #d8d1c3;
+      --codex: #50dc82;
+      --claude: #da1100;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--paper);
+      color: var(--ink);
+      font: 14px/1.45 ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    main {
+      width: min(1200px, calc(100vw - 40px));
+      margin: 0 auto;
+      padding: 28px 0 42px;
+    }
+    header {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 24px;
+      align-items: end;
+      padding-bottom: 18px;
+      border-bottom: 1px solid var(--line);
+      margin-bottom: 22px;
+    }
+    h1 {
+      margin: 0;
+      font-size: 26px;
+      line-height: 1.1;
+      letter-spacing: 0;
+    }
+    .note {
+      margin-top: 8px;
+      max-width: 720px;
+      color: var(--muted);
+    }
+    .legend {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+    .chip {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 7px 10px;
+      background: #fffaf0;
+      font-weight: 650;
+    }
+    .chip.codex { color: #096b39; }
+    .chip.claude { color: #a33e22; }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(184px, 1fr));
+      gap: 18px;
+    }
+    .tile {
+      border-top: 1px solid var(--line);
+      padding-top: 12px;
+    }
+    .label {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 12px;
+      margin-bottom: 8px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .label strong {
+      color: var(--ink);
+      font-size: 13px;
+    }
+    canvas {
+      display: block;
+      width: 100%;
+      aspect-ratio: 1;
+      image-rendering: pixelated;
+      border-radius: 8px;
+      background: #111;
+    }
+    @media (max-width: 720px) {
+      header { grid-template-columns: 1fr; }
+      .legend { justify-content: flex-start; }
+      main { width: min(100vw - 28px, 1200px); }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <div>
+        <h1>cc-mochi expression preview</h1>
+        <div class="note">Static canvas preview of the firmware status language: no agent logo in running states, source identity by background, multi/subagent as corner markers.</div>
+      </div>
+      <div class="legend">
+        <div class="chip codex">Codex: black + green, terminal geometry</div>
+        <div class="chip claude">Claude: warm orange, softer arcs</div>
+      </div>
+    </header>
+    <section class="grid" id="grid"></section>
+  </main>
+
+  <script>
+    const states = [
+      'sleeping', 'thinking', 'reading', 'writing', 'shell', 'permission',
+      'blocked', 'error', 'success', 'compact', 'subagent', 'multi', 'usage_low', 'usage_critical'
+    ];
+    const agents = ['codex', 'claude'];
+    const W = 240;
+
+    const colors = {
+      codex: { bg:'#000000', sleep:'#040705', face:'#50dc82', icon:'#50dc82', badge:'#08180d', multi:'#08120b' },
+      claude: { bg:'#da1100', sleep:'#da1100', face:'#1c1814', icon:'#241a12', badge:'#ffb068', multi:'#f57e46' },
+      yellow:'#f5b946', blue:'#4896e6', red:'#e64640', green:'#50dc82'
+    };
+
+    function theme(agent, state) {
+      const t = colors[agent];
+      let bg = t.bg;
+      if (state === 'sleeping') bg = t.sleep;
+      if (state === 'error' || state === 'usage_critical') bg = agent === 'codex' ? '#120405' : t.bg;
+      if (state === 'blocked') bg = agent === 'codex' ? '#120e04' : t.bg;
+      return {...t, bg};
+    }
+    function visualState(state) {
+      if (state === 'multi-active') return 'multi';
+      return state === 'subagent' ? 'thinking' : state;
+    }
+    function accent(state, t) {
+      if (state === 'error' || state === 'blocked' || state === 'usage_critical') return colors.red;
+      if (state === 'permission' || state === 'compact' || state === 'usage_low') return colors.yellow;
+      if (state === 'success') return colors.green;
+      if (state === 'shell' || state === 'reading' || state === 'writing') return colors.blue;
+      return t.icon;
+    }
+    function pixelStar(ctx, x, y, c) {
+      ctx.fillStyle = c;
+      ctx.fillRect(x + 4, y, 5, 13);
+      ctx.fillRect(x, y + 4, 13, 5);
+    }
+    function miniTerminal(ctx, x, y, t) {
+      ctx.fillStyle = t.face; ctx.fillRect(x, y, 58, 40);
+      ctx.fillStyle = '#1c1d2c'; ctx.fillRect(x + 2, y + 2, 54, 36);
+      ctx.fillStyle = '#2a2a3c'; ctx.fillRect(x + 2, y + 2, 54, 6);
+      ctx.fillStyle = colors.red; ctx.fillRect(x + 6, y + 4, 3, 3);
+      ctx.fillStyle = colors.yellow; ctx.fillRect(x + 12, y + 4, 3, 3);
+      ctx.fillStyle = colors.green; ctx.fillRect(x + 18, y + 4, 3, 3);
+      ctx.fillStyle = colors.green; ctx.fillRect(x + 8, y + 17, 28, 4);
+      ctx.fillStyle = colors.blue; ctx.fillRect(x + 8, y + 26, 38, 3);
+    }
+    function miniKeyboard(ctx, x, y) {
+      ctx.fillStyle = '#2a4048'; ctx.fillRect(x, y, 74, 18);
+      ctx.fillStyle = '#527684'; ctx.fillRect(x, y + 2, 74, 13);
+      for (let row = 0; row < 3; row++) {
+        for (let col = 0; col < 8; col++) {
+          ctx.fillStyle = ((row + col) % 6 === 0) ? colors.green : '#7c9ea8';
+          ctx.fillRect(x + 5 + col * 8 + (row === 1 ? 3 : 0), y + 4 + row * 4, 5, 2);
+        }
+      }
+    }
+    function openBook(ctx, x, y, cover, page, ink) {
+      rr(ctx, x, y, 78, 34, 5, cover);
+      rr(ctx, x+4, y+4, 32, 26, 3, page);
+      rr(ctx, x+42, y+4, 32, 26, 3, page);
+      ctx.fillStyle = ink; ctx.fillRect(x+38,y+3,2,29);
+      ctx.fillRect(x+10,y+12,20,2); ctx.fillRect(x+10,y+19,16,2);
+      ctx.fillRect(x+48,y+12,18,2); ctx.fillRect(x+48,y+19,22,2);
+    }
+    function tinyBattery(ctx, x, y, frame, fill, critical) {
+      rr(ctx, x, y, 42, 22, 4, null, frame);
+      ctx.fillStyle = frame; ctx.fillRect(x+42,y+7,5,8);
+      ctx.fillStyle = fill; ctx.fillRect(x+5,y+5,critical ? 8 : 18,12);
+      if (critical) {
+        ctx.fillStyle = frame; ctx.fillRect(x+20,y+4,5,14); ctx.fillRect(x+20,y+4,15,5);
+      }
+    }
+    function bugProbe(ctx, x, y, c, bg) {
+      rr(ctx, x+12,y+10,28,22,6,c);
+      ctx.fillStyle = c; ctx.fillRect(x+22,y+4,8,8);
+      ctx.fillStyle = bg; ctx.fillRect(x+18,y+16,5,5); ctx.fillRect(x+30,y+16,5,5);
+      line(ctx,x+8,y+14,x,y+8,2,c); line(ctx,x+44,y+14,x+52,y+8,2,c);
+      line(ctx,x+8,y+24,x,y+30,2,c); line(ctx,x+44,y+24,x+52,y+30,2,c);
+    }
+    function statusProp(ctx, state, t, agent) {
+      const c = accent(state, t);
+      if (state === 'thinking') {
+        const bubble = agent === 'codex' ? '#d2ffe2' : '#ffeec6';
+        ctx.fillStyle = bubble;
+        ctx.beginPath(); ctx.arc(166,58,5,0,7); ctx.arc(178,44,8,0,7); ctx.fill();
+        rr(ctx, 188, 22, 34, 28, 7, bubble);
+        ctx.fillStyle = t.face; ctx.fillRect(198,34,4,4); ctx.fillRect(208,34,4,4);
+      } else if (state === 'shell') {
+        miniTerminal(ctx, 152, 28, t);
+      } else if (state === 'writing') {
+        miniKeyboard(ctx, 83, 182);
+        ctx.fillStyle = c; ctx.fillRect(158, 172, 9, 32);
+        ctx.beginPath(); ctx.moveTo(158,204); ctx.lineTo(167,204); ctx.lineTo(162,214); ctx.fill();
+      } else if (state === 'reading') {
+        rr(ctx,76,170,36,20,6,c); rr(ctx,128,170,36,20,6,c);
+        ctx.fillStyle = c; ctx.fillRect(112,178,16,4);
+        ctx.fillStyle = t.bg; ctx.fillRect(82,176,24,4); ctx.fillRect(134,176,24,4);
+        openBook(ctx,81,196,c,agent === 'codex' ? '#d6f4e0' : '#ffe0b8',t.face);
+        ctx.fillStyle = colors.blue; ctx.fillRect(54,64,4,4);
+        ctx.fillStyle = colors.green; ctx.fillRect(184,58,5,5);
+      } else if (state === 'permission') {
+        bugProbe(ctx,28,34,c,t.bg);
+        ctx.strokeStyle = c; ctx.lineWidth = 4;
+        ctx.beginPath(); ctx.arc(177,55,18,0,7); ctx.stroke();
+        line(ctx,190,68,207,85,5,c);
+        ctx.fillStyle = c; ctx.fillRect(172,51,10,12);
+      } else if (state === 'blocked') {
+        const stripe = agent === 'codex' ? colors.yellow : '#ffe0b8';
+        rr(ctx,64,36,112,18,3,t.face);
+        ctx.fillStyle = stripe;
+        for (let i=0;i<5;i++) { const x = 70 + i * 21; ctx.beginPath(); ctx.moveTo(x,37); ctx.lineTo(x+12,37); ctx.lineTo(x,53); ctx.fill(); }
+        ctx.fillStyle = t.face; ctx.fillRect(82,54,8,18); ctx.fillRect(150,54,8,18);
+      } else if (state === 'error' || state === 'usage_critical') {
+        const err = agent === 'codex' ? colors.red : '#fff';
+        if (state === 'usage_critical') {
+          tinyBattery(ctx,170,38,err,colors.red,true);
+          ctx.fillStyle = err; ctx.beginPath(); ctx.moveTo(100,26); ctx.lineTo(78,66); ctx.lineTo(122,66); ctx.fill();
+          ctx.fillStyle = t.bg; ctx.beginPath(); ctx.moveTo(100,34); ctx.lineTo(86,62); ctx.lineTo(114,62); ctx.fill();
+          ctx.fillStyle = err; ctx.fillRect(97,43,6,12); ctx.fillRect(97,58,6,5);
+        } else {
+          ctx.fillStyle = err; ctx.beginPath(); ctx.moveTo(120,24); ctx.lineTo(92,72); ctx.lineTo(148,72); ctx.fill();
+          ctx.fillStyle = t.bg; ctx.beginPath(); ctx.moveTo(120,32); ctx.lineTo(100,68); ctx.lineTo(140,68); ctx.fill();
+          ctx.fillStyle = err; ctx.fillRect(117,42,6,16); ctx.fillRect(117,62,6,5);
+        }
+        ctx.fillStyle = t.face; ctx.fillRect(82,178,76,6);
+      } else if (state === 'success') {
+        pixelStar(ctx,48,56,colors.yellow); pixelStar(ctx,180,48,colors.yellow); pixelStar(ctx,196,78,colors.yellow);
+      } else if (state === 'compact') {
+        rr(ctx,48,42,42,18,3,c); rr(ctx,150,42,42,18,3,c);
+        line(ctx,90,51,112,51,5,c); line(ctx,150,51,128,51,5,c);
+        ctx.fillStyle = c; ctx.beginPath(); ctx.moveTo(112,43); ctx.lineTo(112,59); ctx.lineTo(124,51); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(128,43); ctx.lineTo(128,59); ctx.lineTo(116,51); ctx.fill();
+      } else if (state === 'subagent') {
+        arc(ctx,120,118,76,205,335,7,c);
+        rr(ctx,44,94,15,34,5,c);
+        rr(ctx,181,94,15,34,5,c);
+        pixelStar(ctx,70,50,c);
+        pixelStar(ctx,160,46,c);
+      } else if (state === 'multi') {
+        ctx.fillStyle = colors.yellow; ctx.beginPath(); ctx.arc(83,50,7,0,7); ctx.fill();
+        ctx.fillStyle = colors.green; ctx.beginPath(); ctx.arc(120,38,7,0,7); ctx.fill();
+        ctx.fillStyle = colors.red; ctx.beginPath(); ctx.arc(157,50,7,0,7); ctx.fill();
+      } else if (state === 'usage_low') {
+        tinyBattery(ctx,172,40,colors.yellow,colors.red,false);
+        ctx.fillStyle = colors.yellow; ctx.fillRect(60,60,9,3); ctx.fillRect(184,80,7,3);
+      }
+    }
+    function rr(ctx, x, y, w, h, r, fill, stroke) {
+      ctx.beginPath();
+      ctx.moveTo(x+r, y);
+      ctx.arcTo(x+w, y, x+w, y+h, r);
+      ctx.arcTo(x+w, y+h, x, y+h, r);
+      ctx.arcTo(x, y+h, x, y, r);
+      ctx.arcTo(x, y, x+w, y, r);
+      ctx.closePath();
+      if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+      if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = 2; ctx.stroke(); }
+    }
+    function line(ctx, x1, y1, x2, y2, width, color) {
+      ctx.strokeStyle = color; ctx.lineWidth = width; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+    }
+    function arc(ctx, x, y, r, a0, a1, width, color) {
+      ctx.strokeStyle = color; ctx.lineWidth = width; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.arc(x, y, r, a0 * Math.PI / 180, a1 * Math.PI / 180); ctx.stroke();
+    }
+    function xEye(ctx, x, y, c) {
+      line(ctx, x, y, x+38, y+44, 7, c);
+      line(ctx, x+38, y, x, y+44, 7, c);
+    }
+    function chevron(ctx, cx, cy, dir, c) {
+      line(ctx, cx-dir*13, cy-18, cx+dir*13, cy, 7, c);
+      line(ctx, cx+dir*13, cy, cx-dir*13, cy+18, 7, c);
+    }
+    function codexFace(ctx, state, t) {
+      const s = visualState(state), f = t.face, cut = t.bg;
+      const lx = 54, rx = 148, y = 92;
+      if (s === 'sleeping') {
+        line(ctx, lx, y+28, lx+42, y+28, 7, f); line(ctx, rx, y+28, rx+42, y+28, 7, f);
+        ctx.fillStyle = f; ctx.font = '24px ui-monospace, monospace'; ctx.fillText('z', 174, 92); ctx.fillText('Z', 194, 74); return;
+      }
+      if (s === 'thinking') {
+        rr(ctx, lx, y, 40, 64, 4, f); rr(ctx, rx, y, 40, 64, 4, f);
+        ctx.fillStyle = cut; ctx.fillRect(lx+20, y+14, 12, 12); ctx.fillRect(rx+20, y+14, 12, 12);
+        ctx.fillStyle = f; ctx.fillRect(112, 166, 28, 6); return;
+      }
+      if (s === 'multi') {
+        rr(ctx, lx, y, 40, 62, 4, f); rr(ctx, rx, y, 40, 62, 4, f);
+        ctx.fillStyle = cut; ctx.fillRect(lx+14, y+10, 12, 12); ctx.fillRect(rx+14, y+10, 12, 12);
+        ctx.fillStyle = f; ctx.fillRect(108, 166, 24, 5); return;
+      }
+      if (s === 'reading') {
+        rr(ctx, lx-2, y+18, 48, 20, 4, f); rr(ctx, rx-2, y+18, 48, 20, 4, f);
+        ctx.fillStyle = cut; ctx.fillRect(lx+6, y+24, 30, 6); ctx.fillRect(rx+6, y+24, 30, 6);
+        line(ctx, 82, 152, 160, 152, 3, f); return;
+      }
+      if (s === 'writing') { line(ctx,lx-2,y+18,lx+44,y+34,10,f); line(ctx,rx-2,y+34,rx+44,y+18,10,f); line(ctx,88,164,152,152,5,f); return; }
+      if (s === 'shell') {
+        rr(ctx,lx-2,y+4,52,54,4,f); rr(ctx,rx-2,y+4,52,54,4,f);
+        ctx.fillStyle=cut; ctx.fillRect(lx+10,y+18,10,7); ctx.fillRect(lx+22,y+27,18,6); ctx.fillRect(rx+11,y+17,24,7); ctx.fillRect(rx+36,y+17,6,26); return;
+      }
+      if (s === 'permission') { rr(ctx,lx-4,y+2,52,60,6,null,f); rr(ctx,rx-4,y+2,52,60,6,null,f); ctx.fillStyle=f; ctx.fillRect(lx+26,y+18,8,18); ctx.fillRect(rx+10,y+18,8,18); ctx.beginPath(); ctx.arc(120,166,5,0,7); ctx.fill(); return; }
+      if (s === 'usage_low') { rr(ctx,lx-2,y+28,48,12,4,f); rr(ctx,rx-2,y+28,48,12,4,f); line(ctx,102,164,138,164,4,f); return; }
+      if (s === 'blocked') { line(ctx,lx,y+26,lx+46,y+20,10,f); line(ctx,rx,y+20,rx+46,y+26,10,f); rr(ctx,86,160,68,8,3,f); return; }
+      if (s === 'error' || s === 'usage_critical') { xEye(ctx,lx+2,y+8,f); xEye(ctx,rx+2,y+8,f); rr(ctx,104,162,34,7,2,f); return; }
+      if (s === 'success') {
+        line(ctx,lx+2,y+32,lx+20,y+18,8,f); line(ctx,lx+20,y+18,lx+42,y+32,8,f);
+        line(ctx,rx+2,y+32,rx+20,y+18,8,f); line(ctx,rx+20,y+18,rx+42,y+32,8,f);
+        line(ctx,106,164,118,176,6,f); line(ctx,118,176,140,150,6,f);
+        return;
+      }
+      if (s === 'compact') { rr(ctx,lx-6,y+28,54,12,4,f); rr(ctx,rx-6,y+28,54,12,4,f); line(ctx,100,164,114,164,4,f); line(ctx,140,164,126,164,4,f); return; }
+    }
+    function claudeFace(ctx, state, t) {
+      const s = visualState(state), f = t.face, lx = 70, rx = 150, y = 100;
+      if (s === 'sleeping') { arc(ctx,lx+18,y+24,18,205,335,7,f); arc(ctx,rx+18,y+24,18,205,335,7,f); ctx.fillStyle='#ffd2a0'; ctx.font='24px ui-monospace, monospace'; ctx.fillText('z',176,92); ctx.fillText('Z',196,74); return; }
+      if (s === 'thinking') { rr(ctx,lx,y,34,52,12,f); rr(ctx,rx,y,34,52,12,f); ctx.fillStyle=t.bg; ctx.beginPath(); ctx.arc(lx+23,y+14,6,0,7); ctx.arc(rx+23,y+14,6,0,7); ctx.fill(); arc(ctx,120,166,12,205,335,4,f); return; }
+      if (s === 'multi') { rr(ctx,lx,y,34,52,12,f); rr(ctx,rx,y,34,52,12,f); ctx.fillStyle=t.bg; ctx.beginPath(); ctx.arc(lx+17,y+12,6,0,7); ctx.arc(rx+17,y+12,6,0,7); ctx.fill(); rr(ctx,108,166,24,5,2,f); return; }
+      if (s === 'reading') { arc(ctx,lx+17,y+28,20,195,345,7,f); arc(ctx,rx+17,y+28,20,195,345,7,f); rr(ctx,88,154,64,10,4,f); return; }
+      if (s === 'writing') { arc(ctx,lx+17,y+28,20,210,335,7,f); arc(ctx,rx+17,y+22,20,200,325,7,f); line(ctx,96,164,144,158,4,f); return; }
+      if (s === 'shell') { rr(ctx,lx-4,y+2,44,46,8,null,f); rr(ctx,rx-4,y+2,44,46,8,null,f); line(ctx,lx+8,y+18,lx+17,y+24,4,f); line(ctx,lx+17,y+24,lx+8,y+30,4,f); line(ctx,rx+8,y+28,rx+26,y+28,4,f); return; }
+      if (s === 'permission') {
+        ctx.strokeStyle=f; ctx.lineWidth=4;
+        ctx.beginPath(); ctx.arc(lx+17,y+26,22,0,7); ctx.stroke();
+        ctx.beginPath(); ctx.arc(rx+17,y+26,22,0,7); ctx.stroke();
+        ctx.fillStyle=f;
+        for (const [px, py, r] of [[lx+23,y+20,6],[rx+11,y+20,6],[120,166,4]]) {
+          ctx.beginPath(); ctx.arc(px,py,r,0,7); ctx.fill();
+        }
+        return;
+      }
+      if (s === 'usage_low') { arc(ctx,lx+17,y+25,19,195,345,9,f); arc(ctx,rx+17,y+25,19,195,345,9,f); rr(ctx,104,164,32,5,2,f); return; }
+      if (s === 'blocked') { arc(ctx,lx+17,y+20,20,205,335,9,f); arc(ctx,rx+17,y+20,20,205,335,9,f); rr(ctx,92,160,56,7,3,f); return; }
+      if (s === 'error' || s === 'usage_critical') { xEye(ctx,lx-1,y+2,f); xEye(ctx,rx-1,y+2,f); return; }
+      if (s === 'success') { arc(ctx,lx+17,y+24,20,205,335,9,f); arc(ctx,rx+17,y+24,20,205,335,9,f); arc(ctx,120,158,20,25,155,4,f); return; }
+      if (s === 'compact') { rr(ctx,lx-8,y+26,48,10,4,f); rr(ctx,rx-8,y+26,48,10,4,f); return; }
+    }
+    function icon(ctx, state, t) {
+      if (['sleeping','multi','subagent'].includes(state)) return;
+      const c = accent(state, t);
+      let b = t.badge;
+      if (state === 'error' || state === 'blocked') b = '#480c0c';
+      if (state === 'permission' || state === 'compact') b = '#483608';
+      if (state === 'success') b = '#063418';
+      rr(ctx,12,12,50,50,8,b,c);
+      const x=19,y=19;
+      if (state === 'thinking') { ctx.strokeStyle=c; ctx.lineWidth=3; ctx.beginPath(); ctx.arc(x+18,y+14,12,0,7); ctx.stroke(); ctx.fillStyle=c; ctx.fillRect(x+12,y+27,13,6); line(ctx,x+13,y+37,x+24,y+37,2,c); line(ctx,x+18,y-2,x+18,y+5,2,c); }
+      if (state === 'reading') { rr(ctx,x,y+8,36,27,4,null,c); line(ctx,x+18,y+9,x+18,y+35,2,c); line(ctx,x+1,y+14,x+16,y+18,2,c); line(ctx,x+35,y+14,x+20,y+18,2,c); }
+      if (state === 'writing') { line(ctx,x+4,y+34,x+32,y+6,6,c); ctx.fillStyle=c; ctx.beginPath(); ctx.moveTo(x+32,y+6); ctx.lineTo(x+38,y+14); ctx.lineTo(x+25,y+12); ctx.fill(); }
+      if (state === 'shell') { rr(ctx,x,y+9,38,29,5,null,c); line(ctx,x+7,y+18,x+14,y+24,4,c); line(ctx,x+14,y+24,x+7,y+30,4,c); line(ctx,x+21,y+30,x+34,y+30,4,c); }
+      if (state === 'permission') { rr(ctx,x+6,y+21,27,20,4,null,c); ctx.beginPath(); ctx.arc(x+19,y+21,10,Math.PI,0); ctx.stroke(); ctx.fillStyle=c; ctx.beginPath(); ctx.arc(x+19,y+31,3,0,7); ctx.fill(); }
+      if (state === 'blocked') { ctx.strokeStyle=c; ctx.lineWidth=3; ctx.beginPath(); ctx.arc(x+19,y+21,18,0,7); ctx.stroke(); line(ctx,x+7,y+34,x+31,y+10,6,c); }
+      if (state === 'error') { ctx.strokeStyle=c; ctx.lineWidth=3; ctx.beginPath(); ctx.moveTo(x+19,y+4); ctx.lineTo(x+1,y+39); ctx.lineTo(x+37,y+39); ctx.closePath(); ctx.stroke(); ctx.fillStyle=c; ctx.fillRect(x+17,y+16,5,14); ctx.beginPath(); ctx.arc(x+19,y+34,3,0,7); ctx.fill(); }
+      if (state === 'success') { line(ctx,x+4,y+24,x+15,y+35,6,c); line(ctx,x+15,y+35,x+37,y+9,6,c); }
+      if (state === 'compact') { line(ctx,x+3,y+22,x+17,y+22,5,c); line(ctx,x+3,y+22,x+10,y+15,5,c); line(ctx,x+3,y+22,x+10,y+29,5,c); line(ctx,x+36,y+22,x+22,y+22,5,c); line(ctx,x+36,y+22,x+29,y+15,5,c); line(ctx,x+36,y+22,x+29,y+29,5,c); }
+    }
+    function corner(ctx, state, active, t) {
+      if (state !== 'multi' && state !== 'subagent' && active < 2) return;
+      const bg = t.multi, c = t.face;
+      rr(ctx,174,12,54,28,7,bg,c);
+      if (state === 'subagent') {
+        ctx.strokeStyle=c; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(188,26,5,0,7); ctx.arc(206,26,5,0,7); ctx.stroke(); line(ctx,193,26,201,26,2,c);
+      } else {
+        ctx.fillStyle=c; for (let i=0;i<3;i++){ ctx.beginPath(); ctx.arc(188+i*10,26,3,0,7); ctx.fill(); }
+      }
+    }
+    function draw(canvas, agent, state) {
+      const ctx = canvas.getContext('2d');
+      const t = theme(agent, state);
+      ctx.clearRect(0,0,W,W);
+      ctx.fillStyle = t.bg; ctx.fillRect(0,0,W,W);
+      icon(ctx, state, t);
+      corner(ctx, state, state === 'multi' ? 3 : 1, t);
+      if (agent === 'claude') claudeFace(ctx, state, t); else codexFace(ctx, state, t);
+      statusProp(ctx, state, t, agent);
+    }
+    const grid = document.getElementById('grid');
+    for (const agent of agents) {
+      for (const state of states) {
+        const tile = document.createElement('article');
+        tile.className = 'tile';
+        tile.innerHTML = `<div class="label"><strong>${agent}</strong><span>${state}</span></div><canvas width="240" height="240"></canvas>`;
+        grid.appendChild(tile);
+        draw(tile.querySelector('canvas'), agent, state);
+      }
+    }
+  </script>
+</body>
+</html>

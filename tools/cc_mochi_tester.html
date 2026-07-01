@@ -1,0 +1,535 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>cc-mochi tester</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #111318;
+      --panel: #1c2028;
+      --panel2: #252a34;
+      --text: #f1eadf;
+      --muted: #9a948b;
+      --line: #373d4a;
+      --accent: #da1100;
+      --green: #54d486;
+      --yellow: #f3bd52;
+      --red: #ef615b;
+      --blue: #68a6e8;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--text);
+      font: 14px/1.45 ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    main {
+      width: min(1120px, calc(100vw - 32px));
+      margin: 0 auto;
+      padding: 24px 0 40px;
+    }
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 18px;
+    }
+    h1 {
+      margin: 0;
+      font-size: 22px;
+      font-weight: 700;
+      letter-spacing: 0;
+    }
+    .sub {
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .connect {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+    button, input, select {
+      border: 1px solid var(--line);
+      background: var(--panel2);
+      color: var(--text);
+      border-radius: 7px;
+      min-height: 36px;
+      padding: 0 12px;
+      font: inherit;
+    }
+    button {
+      cursor: pointer;
+      font-weight: 650;
+      min-width: 0;
+      white-space: nowrap;
+    }
+    a.button-link {
+      display: inline-flex;
+      align-items: center;
+      min-height: 36px;
+      padding: 0 12px;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      color: var(--text);
+      background: var(--panel2);
+      text-decoration: none;
+      font-weight: 650;
+    }
+    button:hover { border-color: #666f80; }
+    a.button-link:hover { border-color: #666f80; }
+    button.primary {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: white;
+    }
+    button.green { border-color: #2a7a4c; color: var(--green); }
+    button.yellow { border-color: #8a6926; color: var(--yellow); }
+    button.red { border-color: #8d3431; color: var(--red); }
+    button.blue { border-color: #315f91; color: var(--blue); }
+    button:disabled {
+      opacity: .45;
+      cursor: default;
+    }
+    .status {
+      color: var(--muted);
+      font-size: 13px;
+      min-width: 170px;
+      text-align: right;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+      align-items: start;
+    }
+    section {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 14px;
+      min-width: 0;
+    }
+    h2 {
+      margin: 0 0 12px;
+      font-size: 14px;
+      letter-spacing: 0;
+      color: #d8d0c5;
+    }
+    .buttons {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+      gap: 8px;
+      min-width: 0;
+    }
+    .matrix {
+      display: grid;
+      gap: 12px;
+    }
+    .agent-title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+      color: #d8d0c5;
+      font-weight: 750;
+      font-size: 13px;
+    }
+    .dot {
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      border: 1px solid currentColor;
+      display: inline-block;
+    }
+    .dot.codex { background: #050806; color: var(--green); }
+    .dot.claude { background: var(--accent); color: #201813; }
+    .form {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+      gap: 8px;
+      align-items: end;
+    }
+    label {
+      display: grid;
+      gap: 5px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    label.w2 { grid-column: span 2; }
+    label.w3 { grid-column: span 3; }
+    label.w6 { grid-column: span 6; }
+    .send-row {
+      grid-column: span 6;
+      display: flex;
+      gap: 8px;
+      justify-content: flex-end;
+    }
+    textarea {
+      width: 100%;
+      min-height: 150px;
+      border: 1px solid var(--line);
+      background: #0b0d11;
+      color: #d7e3cf;
+      border-radius: 7px;
+      padding: 10px;
+      resize: vertical;
+      font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+    .log {
+      min-height: 210px;
+      max-height: 310px;
+      overflow: auto;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      background: #0b0d11;
+      padding: 10px;
+      white-space: pre-wrap;
+      color: #c7d1c0;
+      font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+    @media (max-width: 820px) {
+      header { align-items: flex-start; flex-direction: column; }
+      .connect { justify-content: flex-start; }
+      .status { text-align: left; }
+      .grid { grid-template-columns: 1fr; }
+      .form { grid-template-columns: 1fr 1fr; }
+      label.w2, label.w3, label.w6, .send-row { grid-column: span 2; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <div>
+        <h1>cc-mochi hardware tester</h1>
+        <div class="sub">Connect with Web Serial, then click states or usage cards to preview the screen.</div>
+      </div>
+      <div class="connect">
+        <a class="button-link" href="./cc_mochi_expression_preview.html">Expression preview</a>
+        <button class="primary" id="connectBtn">Connect serial</button>
+        <button id="disconnectBtn" disabled>Disconnect</button>
+        <div class="status" id="status">not connected</div>
+      </div>
+    </header>
+
+    <div class="grid">
+      <section>
+        <h2>State Matrix</h2>
+        <div class="buttons" style="margin-bottom:12px">
+          <button class="primary" id="bootDemo">Mochi boot animation</button>
+        </div>
+        <div class="matrix" id="stateButtons"></div>
+      </section>
+
+      <section>
+        <h2>Usage Cards</h2>
+        <div class="buttons" id="usageButtons"></div>
+      </section>
+
+      <section>
+        <h2>Custom State</h2>
+        <div class="form">
+          <label class="w2">source
+            <select id="source">
+              <option>codex</option>
+              <option>claude</option>
+              <option>cc</option>
+            </select>
+          </label>
+          <label class="w2">state
+            <select id="state">
+              <option>thinking</option>
+              <option>reading</option>
+              <option>writing</option>
+              <option>shell</option>
+              <option>permission</option>
+              <option>blocked</option>
+              <option>error</option>
+              <option>success</option>
+              <option>compact</option>
+              <option>subagent</option>
+              <option>multi</option>
+              <option>usage_low</option>
+              <option>usage_critical</option>
+              <option>sleeping</option>
+            </select>
+          </label>
+          <label class="w2">active
+            <input id="active" type="number" min="0" max="9" value="1">
+          </label>
+          <label class="w6">label
+            <input id="label" value="custom">
+          </label>
+          <div class="send-row">
+            <button class="primary" id="sendCustomState">Send state</button>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2>Custom Usage</h2>
+        <div class="form">
+          <label class="w2">provider
+            <select id="provider">
+              <option>codex</option>
+              <option>claude</option>
+            </select>
+          </label>
+          <label class="w2">primary
+            <input id="primary" type="number" min="0" max="100" value="55">
+          </label>
+          <label class="w2">secondary
+            <input id="secondary" type="number" min="0" max="100" value="35">
+          </label>
+          <label class="w2">reset
+            <input id="reset" value="2h30m">
+          </label>
+          <label class="w2">badge
+            <input id="badge" value="plus">
+          </label>
+          <label class="w2">flag
+            <select id="flag">
+              <option value="ok">ok</option>
+              <option value="unavailable">unavailable</option>
+              <option value="stale">stale</option>
+            </select>
+          </label>
+          <div class="send-row">
+            <button class="primary" id="sendCustomUsage">Send usage</button>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2>Raw JSON Line</h2>
+        <textarea id="raw">{"type":"state","source":"codex","state":"thinking","label":"prompt","active":1}</textarea>
+        <div class="send-row" style="margin-top:8px">
+          <button id="sendRaw">Send raw</button>
+        </div>
+      </section>
+
+      <section>
+        <h2>Device Log</h2>
+        <div class="log" id="log"></div>
+      </section>
+    </div>
+  </main>
+
+  <script>
+    let port;
+    let writer;
+    let reader;
+    let keepReading = false;
+
+    const statusEl = document.getElementById('status');
+    const logEl = document.getElementById('log');
+    const connectBtn = document.getElementById('connectBtn');
+    const disconnectBtn = document.getElementById('disconnectBtn');
+
+    const stateNames = [
+      'thinking',
+      'reading',
+      'writing',
+      'shell',
+      'permission',
+      'blocked',
+      'error',
+      'success',
+      'compact',
+      'subagent',
+      'multi',
+      'usage_low',
+      'usage_critical',
+      'sleeping',
+    ];
+
+    const stateLabels = {
+      thinking: 'thinking',
+      reading: 'reading',
+      writing: 'writing',
+      shell: 'shell',
+      permission: 'permission',
+      blocked: 'blocked',
+      error: 'error',
+      success: 'success',
+      compact: 'compact',
+      subagent: 'subagent',
+      multi: 'multi active',
+      usage_low: 'usage low',
+      usage_critical: 'usage critical',
+      sleeping: 'sleeping',
+    };
+
+    const usages = [
+      ['Codex 0%', {type:'usage', provider:'codex', primary:0, secondary:8, reset:'5h00m', badge:'plus', unavailable:false, stale:false}],
+      ['Codex 50%', {type:'usage', provider:'codex', primary:50, secondary:35, reset:'2h30m', badge:'plus', unavailable:false, stale:false}],
+      ['Codex 82%', {type:'usage', provider:'codex', primary:82, secondary:61, reset:'48m', badge:'plus', unavailable:false, stale:false}],
+      ['Codex 97%', {type:'usage', provider:'codex', primary:97, secondary:85, reset:'9m', badge:'plus', unavailable:false, stale:false}],
+      ['Codex stale', {type:'usage', provider:'codex', primary:42, secondary:18, reset:'--', badge:'plus', unavailable:false, stale:true}],
+      ['Codex unavailable', {type:'usage', provider:'codex', primary:0, secondary:0, reset:'', badge:'local', unavailable:true, stale:false}],
+      ['Claude 0%', {type:'usage', provider:'claude', primary:0, secondary:6, reset:'5h00m', badge:'sonnet', unavailable:false, stale:false}],
+      ['Claude 50%', {type:'usage', provider:'claude', primary:50, secondary:20, reset:'2h10m', badge:'sonnet', unavailable:false, stale:false}],
+      ['Claude 88%', {type:'usage', provider:'claude', primary:88, secondary:72, reset:'35m', badge:'opus', unavailable:false, stale:false}],
+      ['Claude 97%', {type:'usage', provider:'claude', primary:97, secondary:91, reset:'9m', badge:'opus', unavailable:false, stale:false}],
+      ['Claude stale', {type:'usage', provider:'claude', primary:42, secondary:10, reset:'--', badge:'cli', unavailable:false, stale:true}],
+      ['Claude unavailable', {type:'usage', provider:'claude', primary:0, secondary:0, reset:'', badge:'local', unavailable:true, stale:false}],
+    ];
+
+    function log(text) {
+      const now = new Date().toLocaleTimeString();
+      logEl.textContent += `[${now}] ${text}\n`;
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    function setConnected(isConnected) {
+      connectBtn.disabled = isConnected;
+      disconnectBtn.disabled = !isConnected;
+      statusEl.textContent = isConnected ? 'connected' : 'not connected';
+    }
+
+    async function connect() {
+      if (!('serial' in navigator)) {
+        statusEl.textContent = 'Web Serial requires Chrome/Edge';
+        log('Web Serial is not available in this browser.');
+        return;
+      }
+      port = await navigator.serial.requestPort();
+      await port.open({ baudRate: 115200 });
+      writer = port.writable.getWriter();
+      keepReading = true;
+      readLoop();
+      setConnected(true);
+      log('connected at 115200');
+      await send({type:'ping'});
+    }
+
+    async function disconnect() {
+      keepReading = false;
+      try { if (reader) await reader.cancel(); } catch {}
+      try { if (writer) writer.releaseLock(); } catch {}
+      try { if (port) await port.close(); } catch {}
+      port = undefined;
+      writer = undefined;
+      reader = undefined;
+      setConnected(false);
+      log('disconnected');
+    }
+
+    async function readLoop() {
+      const decoder = new TextDecoder();
+      while (port && port.readable && keepReading) {
+        reader = port.readable.getReader();
+        try {
+          while (keepReading) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            if (value) log('rx ' + decoder.decode(value).trim());
+          }
+        } catch (err) {
+          log('read error: ' + err.message);
+        } finally {
+          try { reader.releaseLock(); } catch {}
+        }
+      }
+    }
+
+    async function send(payload) {
+      if (!writer) {
+        log('not connected');
+        return;
+      }
+      const line = JSON.stringify(payload) + '\n';
+      await writer.write(new TextEncoder().encode(line));
+      log('tx ' + line.trim());
+    }
+
+    function makeButton(label, payload) {
+      const btn = document.createElement('button');
+      btn.textContent = label;
+      if (payload.state === 'permission' || payload.state === 'usage_low') btn.className = 'yellow';
+      if (payload.state === 'error' || payload.state === 'blocked' || payload.state === 'usage_critical') btn.className = 'red';
+      if (payload.state === 'shell' || payload.state === 'reading' || payload.state === 'writing') btn.className = 'blue';
+      if (payload.state === 'success') btn.className = 'green';
+      btn.addEventListener('click', () => send(payload));
+      return btn;
+    }
+
+    function makeAgentMatrix(source) {
+      const wrap = document.createElement('div');
+      const title = document.createElement('div');
+      title.className = 'agent-title';
+      title.innerHTML = `<span class="dot ${source}"></span>${source === 'codex' ? 'Codex black + green' : 'Claude orange'}`;
+      const buttons = document.createElement('div');
+      buttons.className = 'buttons';
+      for (const state of stateNames) {
+        const active = state === 'multi' ? 3 : (state === 'sleeping' ? 0 : 1);
+        buttons.appendChild(makeButton(stateLabels[state], {
+          type: 'state',
+          source,
+          state,
+          label: stateLabels[state],
+          active,
+        }));
+      }
+      wrap.appendChild(title);
+      wrap.appendChild(buttons);
+      return wrap;
+    }
+
+    const stateRoot = document.getElementById('stateButtons');
+    stateRoot.appendChild(makeAgentMatrix('codex'));
+    stateRoot.appendChild(makeAgentMatrix('claude'));
+    {
+      const buttons = document.createElement('div');
+      buttons.className = 'buttons';
+      buttons.appendChild(makeButton('cc sleeping', {type:'state', source:'cc', state:'sleeping', label:'idle', active:0}));
+      stateRoot.appendChild(buttons);
+    }
+    for (const [label, payload] of usages) {
+      document.getElementById('usageButtons').appendChild(makeButton(label, payload));
+    }
+
+    connectBtn.addEventListener('click', () => connect().catch(err => log('connect error: ' + err.message)));
+    disconnectBtn.addEventListener('click', () => disconnect());
+    document.getElementById('bootDemo').addEventListener('click', () => send({type:'boot'}));
+    document.getElementById('sendCustomState').addEventListener('click', () => {
+      send({
+        type: 'state',
+        source: document.getElementById('source').value,
+        state: document.getElementById('state').value,
+        label: document.getElementById('label').value,
+        active: Number(document.getElementById('active').value || 0),
+      });
+    });
+    document.getElementById('sendCustomUsage').addEventListener('click', () => {
+      const flag = document.getElementById('flag').value;
+      send({
+        type: 'usage',
+        provider: document.getElementById('provider').value,
+        primary: Number(document.getElementById('primary').value || 0),
+        secondary: Number(document.getElementById('secondary').value || 0),
+        reset: document.getElementById('reset').value,
+        badge: document.getElementById('badge').value,
+        unavailable: flag === 'unavailable',
+        stale: flag === 'stale',
+      });
+    });
+    document.getElementById('sendRaw').addEventListener('click', () => {
+      try {
+        send(JSON.parse(document.getElementById('raw').value));
+      } catch (err) {
+        log('raw JSON error: ' + err.message);
+      }
+    });
+  </script>
+</body>
+</html>

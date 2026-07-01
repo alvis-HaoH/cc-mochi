@@ -23,3 +23,5 @@ desktop.ini
 *.log
 *.tmp
 *.bak
+__pycache__/
+*.py[cod]
