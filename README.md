@@ -6,6 +6,10 @@ The hardware UI is intentionally not a numeric dashboard. The expression is the 
 
 ![cc-mochi banner](pics/cc_mochi_banner.png)
 
+## Attribution
+
+This project is based on [`clawd-mochi`](https://github.com/yousifamanuel/clawd-mochi) by Yousuf Amanuel. `cc-mochi` keeps the hardware/display foundation and extends it with Claude Code/Codex bridge hooks, serial JSON Lines control, usage cards, and renamed project assets.
+
 ## Highlights
 
 - Large expression states for `thinking`, `reading`, `writing`, `shell`, `permission`, `compact`, `subagent`, `success`, `error`, `blocked`, `sleeping`, and multi-session activity.
