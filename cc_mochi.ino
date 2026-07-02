@@ -81,6 +81,20 @@ bool     usageUnavailable = false;
 bool     usageStale       = false;
 String   serialLine;
 
+// ── Status face animation (non-blocking, millis-driven) ───────
+struct StatusAnim {
+  uint32_t stateEnterMs = 0;   // when current ccState began (entrance pop / evolution)
+  uint32_t lastTickMs   = 0;   // last idle repaint
+  uint32_t lastBlinkMs  = 0;   // last blink start
+  uint32_t blinkGap     = 3000;// ms until next blink (randomised)
+  bool     blinking     = false;
+  int8_t   breathY      = 0;   // -2..2 breathing offset
+  int8_t   pupilDX      = 0;
+  int8_t   pupilDY      = 0;
+  String   drawnState   = "";  // detect real state change
+};
+StatusAnim anim;
+
 struct AgentTheme {
   uint16_t bg;
   uint16_t face;
@@ -104,68 +118,7 @@ String  termLines[TERM_ROWS];
 uint8_t termRow     = 0;
 uint8_t termCol     = 0;
 
-// ── Logo data ─────────────────────────────────────────────────
-#define LOGO_CX 120
-#define LOGO_CY 105
-
-#define LOGO_TRI_COUNT 162
-static const int16_t LOGO_TRIS[][6] PROGMEM = {
-  {120,105,65,134,100,114},{120,105,100,114,101,113},{120,105,101,113,100,112},
-  {120,105,100,112,99,112},{120,105,99,112,93,111},{120,105,93,111,73,111},
-  {120,105,73,111,55,110},{120,105,55,110,38,109},{120,105,38,109,34,108},
-  {120,105,34,108,30,103},{120,105,30,103,30,100},{120,105,30,100,34,98},
-  {120,105,34,98,39,98},{120,105,39,98,50,99},{120,105,50,99,67,100},
-  {120,105,67,100,80,101},{120,105,80,101,98,103},{120,105,98,103,101,103},
-  {120,105,101,103,101,102},{120,105,101,102,100,101},{120,105,100,101,100,100},
-  {120,105,100,100,82,88},{120,105,82,88,63,76},{120,105,63,76,53,69},
-  {120,105,53,69,48,65},{120,105,48,65,45,61},{120,105,45,61,44,54},
-  {120,105,44,54,49,49},{120,105,49,49,55,49},{120,105,55,49,57,49},
-  {120,105,57,49,64,55},{120,105,64,55,78,66},{120,105,78,66,96,79},
-  {120,105,96,79,99,81},{120,105,99,81,100,81},{120,105,100,81,100,80},
-  {120,105,100,80,99,78},{120,105,99,78,89,60},{120,105,89,60,78,41},
-  {120,105,78,41,73,34},{120,105,73,34,72,29},{120,105,72,29,72,28},
-  {120,105,72,28,72,27},{120,105,72,27,71,26},{120,105,71,26,71,25},
-  {120,105,71,25,71,24},{120,105,71,24,77,16},{120,105,77,16,80,15},
-  {120,105,80,15,87,16},{120,105,87,16,91,19},{120,105,91,19,95,29},
-  {120,105,95,29,103,46},{120,105,103,46,114,68},{120,105,114,68,118,75},
-  {120,105,118,75,119,81},{120,105,119,81,120,83},{120,105,120,83,121,83},
-  {120,105,121,83,121,82},{120,105,121,82,122,69},{120,105,122,69,124,54},
-  {120,105,124,54,126,34},{120,105,126,34,126,28},{120,105,126,28,129,21},
-  {120,105,129,21,135,18},{120,105,135,18,139,20},{120,105,139,20,143,25},
-  {120,105,143,25,142,28},{120,105,142,28,140,42},{120,105,140,42,136,64},
-  {120,105,136,64,133,78},{120,105,133,78,135,78},{120,105,135,78,136,76},
-  {120,105,136,76,144,67},{120,105,144,67,156,51},{120,105,156,51,162,45},
-  {120,105,162,45,168,38},{120,105,168,38,172,35},{120,105,172,35,180,35},
-  {120,105,180,35,185,43},{120,105,185,43,183,52},{120,105,183,52,175,62},
-  {120,105,175,62,168,71},{120,105,168,71,159,83},{120,105,159,83,153,94},
-  {120,105,153,94,154,94},{120,105,154,94,155,94},{120,105,155,94,176,90},
-  {120,105,176,90,188,88},{120,105,188,88,201,85},{120,105,201,85,208,88},
-  {120,105,208,88,208,91},{120,105,208,91,206,97},{120,105,206,97,191,101},
-  {120,105,191,101,174,104},{120,105,174,104,148,110},{120,105,148,110,148,111},
-  {120,105,148,111,148,111},{120,105,148,111,160,112},{120,105,160,112,165,112},
-  {120,105,165,112,177,112},{120,105,177,112,200,114},{120,105,200,114,205,118},
-  {120,105,205,118,209,123},{120,105,209,123,208,126},{120,105,208,126,199,131},
-  {120,105,199,131,187,128},{120,105,187,128,159,121},{120,105,159,121,149,119},
-  {120,105,149,119,147,119},{120,105,147,119,147,120},{120,105,147,120,156,128},
-  {120,105,156,128,170,141},{120,105,170,141,189,158},{120,105,189,158,190,163},
-  {120,105,190,163,188,166},{120,105,188,166,185,166},{120,105,185,166,169,153},
-  {120,105,169,153,162,148},{120,105,162,148,148,136},{120,105,148,136,147,136},
-  {120,105,147,136,147,137},{120,105,147,137,150,142},{120,105,150,142,168,168},
-  {120,105,168,168,169,176},{120,105,169,176,168,179},{120,105,168,179,163,180},
-  {120,105,163,180,158,179},{120,105,158,179,148,165},{120,105,148,165,137,149},
-  {120,105,137,149,129,134},{120,105,129,134,128,135},{120,105,128,135,123,189},
-  {120,105,123,189,120,192},{120,105,120,192,115,194},{120,105,115,194,110,191},
-  {120,105,110,191,108,185},{120,105,108,185,110,174},{120,105,110,174,113,160},
-  {120,105,113,160,116,148},{120,105,116,148,118,134},{120,105,118,134,119,129},
-  {120,105,119,129,119,129},{120,105,119,129,118,129},{120,105,118,129,107,144},
-  {120,105,107,144,91,166},{120,105,91,166,78,180},{120,105,78,180,75,181},
-  {120,105,75,181,70,178},{120,105,70,178,70,173},{120,105,70,173,73,169},
-  {120,105,73,169,91,146},{120,105,91,146,102,132},{120,105,102,132,109,124},
-  {120,105,109,124,109,123},{120,105,109,123,108,123},{120,105,108,123,61,153},
-  {120,105,61,153,52,155},{120,105,52,155,49,151},{120,105,49,151,49,146},
-  {120,105,49,146,51,144},{120,105,51,144,65,134},{120,105,65,134,65,134},
-};
-
+// ── Logo data (Claude mark line segments) ─────────────────────
 #define LOGO_SEG_COUNT 162
 static const int16_t LOGO_SEGS[][4] PROGMEM = {
   {65,134,100,114},{100,114,101,113},{101,113,100,112},{100,112,99,112},
@@ -234,8 +187,8 @@ void setBacklight(bool on) {
 }
 
 void initColours() {
-  // C_ORANGE = tft.color565(170, 72, 28);
-  C_ORANGE = tft.color565(218, 17, 0);
+  // Claude signature coral orange #D97757 (was 218,17,0 pure red)
+  C_ORANGE = tft.color565(217, 119, 87);
   C_DARKBG = tft.color565(10,  12,  16);
   C_MUTED  = tft.color565(90,  88,  86);
   C_GREEN  = tft.color565(80, 220, 130);
@@ -305,100 +258,6 @@ String shortText(String text, uint8_t maxLen) {
 // ═════════════════════════════════════════════════════════════
 //  LOGO
 // ═════════════════════════════════════════════════════════════
-
-void drawLogoFilled(uint16_t bg, uint16_t fg) {
-  tft.fillScreen(bg);
-  for (uint16_t i = 0; i < LOGO_TRI_COUNT; i++) {
-    tft.fillTriangle(
-      pgm_read_word(&LOGO_TRIS[i][0]), pgm_read_word(&LOGO_TRIS[i][1]),
-      pgm_read_word(&LOGO_TRIS[i][2]), pgm_read_word(&LOGO_TRIS[i][3]),
-      pgm_read_word(&LOGO_TRIS[i][4]), pgm_read_word(&LOGO_TRIS[i][5]),
-      fg);
-  }
-  tft.setTextColor(fg); tft.setTextSize(2);
-  tft.setCursor(LOGO_CX - 42, 210); tft.print("cc-mochi");
-  tft.setCursor(LOGO_CX - 41, 210); tft.print("cc-mochi");
-}
-
-void drawMochiPixel(int16_t cx, int16_t cy, int16_t scale, uint16_t body, uint16_t hi, uint16_t eye, uint16_t shadow, bool blink, int8_t wave, int8_t squash) {
-  int16_t u = scale;
-  int16_t x = cx - 9 * u;
-  int16_t y = cy - (6 * u) + squash;
-
-  tft.fillRect(cx - 9 * u, cy + 7 * u, 18 * u, 2 * u, shadow);
-
-  tft.fillRect(x + 3 * u, y - u, 12 * u, u, shadow);
-  tft.fillRect(x + 2 * u, y, 14 * u, 10 * u, shadow);
-  tft.fillRect(x + u, y + 2 * u, 16 * u, 6 * u, shadow);
-  tft.fillRect(x - u, y + (4 - wave) * u, 4 * u, 2 * u, shadow);
-  tft.fillRect(x - 2 * u, y + (3 - wave) * u, 2 * u, 4 * u, shadow);
-  tft.fillRect(x + 16 * u, y + (4 + wave) * u, 4 * u, 2 * u, shadow);
-  tft.fillRect(x + 19 * u, y + (3 + wave) * u, 2 * u, 4 * u, shadow);
-  tft.fillRect(x + 3 * u, y + 10 * u, 12 * u, 4 * u, shadow);
-
-  tft.fillRect(x + 3 * u, y, 12 * u, 2 * u, body);
-  tft.fillRect(x + 2 * u, y + 2 * u, 14 * u, 6 * u, body);
-  tft.fillRect(x + 3 * u, y + 8 * u, 12 * u, 2 * u, body);
-
-  tft.fillRect(x + 4 * u, y + u, 10 * u, u, hi);
-
-  int16_t ly = y + (4 - wave) * u;
-  int16_t ry = y + (4 + wave) * u;
-  tft.fillRect(x, ly, 3 * u, 2 * u, body);
-  tft.fillRect(x - 2 * u, ly - u, 2 * u, 3 * u, body);
-  tft.fillRect(x + 16 * u, ry, 3 * u, 2 * u, body);
-  tft.fillRect(x + 19 * u, ry - u, 2 * u, 3 * u, body);
-
-  tft.fillRect(x + 3 * u, y + 10 * u, 2 * u, 3 * u, body);
-  tft.fillRect(x + 6 * u, y + 10 * u, 2 * u, 3 * u, body);
-  tft.fillRect(x + 10 * u, y + 10 * u, 2 * u, 3 * u, body);
-  tft.fillRect(x + 13 * u, y + 10 * u, 2 * u, 3 * u, body);
-
-  if (blink) {
-    tft.fillRect(x + 6 * u, y + 5 * u, 2 * u, u, eye);
-    tft.fillRect(x + 11 * u, y + 5 * u, 2 * u, u, eye);
-  } else {
-    tft.fillRect(x + 6 * u, y + 4 * u, 2 * u, 2 * u, eye);
-    tft.fillRect(x + 11 * u, y + 4 * u, 2 * u, 2 * u, eye);
-  }
-}
-
-void drawMochiSleepingSprite(int16_t cx, int16_t cy, int16_t scale, uint16_t body, uint16_t hi, uint16_t eye, uint16_t shadow) {
-  int16_t u = scale;
-  int16_t x = cx - 10 * u;
-  int16_t y = cy - 3 * u;
-  tft.fillRect(cx - 10 * u, cy + 4 * u, 20 * u, 2 * u, shadow);
-  tft.fillRect(x + 2 * u, y - u, 16 * u, u, shadow);
-  tft.fillRect(x + u, y, 18 * u, 6 * u, shadow);
-  tft.fillRect(x - u, y + 3 * u, 3 * u, 2 * u, shadow);
-  tft.fillRect(x + 18 * u, y + 3 * u, 3 * u, 2 * u, shadow);
-  tft.fillRect(x + 4 * u, y + 5 * u, 14 * u, 3 * u, shadow);
-  tft.fillRect(x + 2 * u, y, 16 * u, 5 * u, body);
-  tft.fillRect(x + 3 * u, y, 14 * u, u, hi);
-  tft.fillRect(x, y + 3 * u, 2 * u, 2 * u, body);
-  tft.fillRect(x + 18 * u, y + 3 * u, 2 * u, 2 * u, body);
-  tft.fillRect(x + 4 * u, y + 5 * u, 2 * u, 2 * u, body);
-  tft.fillRect(x + 8 * u, y + 5 * u, 2 * u, 2 * u, body);
-  tft.fillRect(x + 12 * u, y + 5 * u, 2 * u, 2 * u, body);
-  tft.fillRect(x + 16 * u, y + 5 * u, 2 * u, 2 * u, body);
-  tft.fillRect(x + 6 * u, y + 3 * u, 2 * u, u, eye);
-  tft.fillRect(x + 12 * u, y + 3 * u, 2 * u, u, eye);
-}
-
-void drawMochiBootBubble(int16_t x, int16_t y, uint16_t fill, uint16_t dot, uint8_t step) {
-  if (step == 0) return;
-  tft.fillCircle(x - 12, y + 34, 4, fill);
-  if (step < 2) return;
-  tft.fillCircle(x - 2, y + 22, 6, fill);
-  if (step < 3) return;
-  tft.fillRoundRect(x, y, 72, 42, 9, fill);
-  tft.fillCircle(x + 12, y + 8, 10, fill);
-  tft.fillCircle(x + 58, y + 9, 10, fill);
-  tft.fillRect(x + 12, y + 2, 48, 38, fill);
-  tft.fillRect(x + 18, y + 18, 7, 7, dot);
-  tft.fillRect(x + 32, y + 18, 7, 7, dot);
-  tft.fillRect(x + 46, y + 18, 7, 7, dot);
-}
 
 void drawBootTerminalBase(int16_t ty) {
   uint16_t term = tft.color565(30, 30, 46);
@@ -784,11 +643,6 @@ void drawTinyClaudeLogo(int16_t x, int16_t y, uint16_t col) {
   drawClaudeMark(x, y, 32, col);
 }
 
-void drawEyePair(int16_t lx, int16_t rx, int16_t y, int16_t w, int16_t h, uint16_t col) {
-  tft.fillRoundRect(lx, y, w, h, 10, col);
-  tft.fillRoundRect(rx, y, w, h, 10, col);
-}
-
 void drawXEye(int16_t x, int16_t y, uint16_t col) {
   drawThickLine(x, y, x + 38, y + 44, 3, col);
   drawThickLine(x + 38, y, x, y + 44, 3, col);
@@ -808,234 +662,177 @@ void drawArcLine(int16_t cx, int16_t cy, int16_t r, int startDeg, int endDeg, ui
 }
 
 String visualState(String state) {
-  if (state == "multi-active") return "multi";
-  if (state == "subagent") return "thinking";
+  return state;
+}
+// subagent / multi render a calm focused base face, then draw their own overlay on top
+String baseFaceState(const String& state) {
+  if (state == "subagent" || state == "multi") return "reading";
   return state;
 }
 
+// ── Codex mouth: square / pixel / straight (eyes=emotion class, mouth=action) ──
+void drawCodexMouth(const String& state, uint16_t f) {
+  const int16_t cx = 120, my = 172;
+  if (state == "thinking")        tft.fillCircle(cx, my, 4, f);                       // small o
+  else if (state == "reading")    tft.fillRoundRect(cx - 16, my - 3, 32, 6, 2, f);    // parted line
+  else if (state == "writing") { drawThickLine(cx - 14, my - 4, cx, my + 4, 2, f); drawThickLine(cx, my + 4, cx + 14, my - 4, 2, f); }
+  else if (state == "shell")      tft.fillRoundRect(cx - 6, my - 3, 20, 6, 1, f);     // prompt bar
+  else if (state == "permission") tft.drawCircle(cx, my, 8, f);                       // open O
+  else if (state == "compact")    tft.fillRoundRect(cx - 20, my - 2, 40, 4, 2, f);    // pressed flat
+  else if (state == "success") { drawThickLine(cx - 16, my - 4, cx - 2, my + 8, 3, f); drawThickLine(cx - 2, my + 8, cx + 20, my - 16, 3, f); }
+  else if (state == "blocked")    drawThickLine(cx - 16, my + 2, cx + 16, my - 2, 3, f); // wry slope
+  else if (state == "error") { drawThickLine(cx - 12, my - 2, cx, my + 6, 2, f); drawThickLine(cx, my + 6, cx + 12, my - 2, 2, f); } // down V
+  else if (state == "usage_critical") { tft.fillRoundRect(cx - 8, my - 2, 7, 4, 1, f); tft.fillRoundRect(cx + 3, my - 2, 7, 4, 1, f); } // broken weak
+  else if (state == "usage_low")  tft.fillRoundRect(cx - 14, my - 2, 28, 5, 2, f);
+  else                            tft.fillRoundRect(cx - 12, my - 2, 24, 5, 2, f);
+}
+
+// Codex-only CRT scanline sweeping the face (mechanical, never warm)
+void drawCodexScanline(const String& state, uint16_t line) {
+  if (state == "error" || state == "usage_critical" || state == "sleeping") return;
+  int16_t y = 60 + ((millis() / 26) % 160);
+  tft.drawFastHLine(38, y, 164, line);   // faint band; overlap with eyes is brief while sweeping
+}
+
 void drawCodexExpression(const String& state, const AgentTheme& theme) {
-  const int16_t lx = 54, rx = 148, y = 92;
+  const int16_t lx = 54, rx = 148, baseY = 92 + anim.breathY;
   uint16_t face = theme.face;
   uint16_t cut = statusBgForState(state, theme);
 
   if (state == "sleeping" || state == "idle") {
-    drawThickLine(lx, y + 28, lx + 42, y + 28, 3, face);
-    drawThickLine(rx, y + 28, rx + 42, y + 28, 3, face);
+    drawThickLine(lx, baseY + 28, lx + 40, baseY + 28, 3, face);
+    drawThickLine(rx, baseY + 28, rx + 40, baseY + 28, 3, face);
     tft.setTextColor(face); tft.setTextSize(2);
     tft.setCursor(174, 76); tft.print("z");
     tft.setCursor(194, 58); tft.print("Z");
     return;
   }
-  if (state == "thinking") {
-    tft.fillRoundRect(lx, y, 40, 64, 4, face);
-    tft.fillRoundRect(rx, y, 40, 64, 4, face);
-    tft.fillRect(lx + 20, y + 14, 12, 12, cut);
-    tft.fillRect(rx + 20, y + 14, 12, 12, cut);
-    tft.fillRect(112, 166, 28, 6, face);
+  if (state == "error") {
+    drawXEye(lx + 2, baseY + 8, face);
+    drawXEye(rx + 2, baseY + 8, face);
+    drawCodexMouth(state, face);
     return;
   }
-  if (state == "multi") {
-    tft.fillRoundRect(lx, y, 40, 62, 4, face);
-    tft.fillRoundRect(rx, y, 40, 62, 4, face);
-    tft.fillRect(lx + 14, y + 10, 12, 12, cut);
-    tft.fillRect(rx + 14, y + 10, 12, 12, cut);
-    tft.fillRect(108, 166, 24, 5, face);
+  if (state == "usage_critical") { // weary low-power eyes: squashed lids + sunken pupils
+    int16_t ey = baseY + 26;
+    tft.fillRoundRect(lx, ey, 40, 14, 4, face);
+    tft.fillRoundRect(rx, ey, 40, 14, 4, face);
+    tft.fillRect(lx + 16, ey + 6, 8, 5, cut);
+    tft.fillRect(rx + 16, ey + 6, 8, 5, cut);
+    drawCodexMouth(state, face);
     return;
   }
-  if (state == "reading") {
-    tft.fillRoundRect(lx - 2, y + 18, 48, 20, 4, face);
-    tft.fillRoundRect(rx - 2, y + 18, 48, 20, 4, face);
-    tft.fillRect(lx + 6, y + 24, 30, 6, cut);
-    tft.fillRect(rx + 6, y + 24, 30, 6, cut);
-    tft.drawFastHLine(82, 152, 78, face);
-    return;
+
+  // generic square eye with blink (height compression) + pupil offset
+  const int16_t fullH = 60, w = 40;
+  int16_t h = anim.blinking ? 6 : fullH;
+  int16_t yTop = baseY + (fullH - h) / 2;
+  tft.fillRoundRect(lx, yTop, w, h, 6, face);
+  tft.fillRoundRect(rx, yTop, w, h, 6, face);
+  if (!anim.blinking && state != "blocked" && state != "success") {
+    int16_t px = 14 + anim.pupilDX, py = 18 + anim.pupilDY;
+    tft.fillRect(lx + px, yTop + py, 12, 12, cut);
+    tft.fillRect(rx + px, yTop + py, 12, 12, cut);
   }
-  if (state == "writing") {
-    drawThickLine(lx - 2, y + 18, lx + 44, y + 34, 5, face);
-    drawThickLine(rx - 2, y + 34, rx + 44, y + 18, 5, face);
-    drawThickLine(88, 164, 152, 152, 3, face);
-    return;
-  }
-  if (state == "shell") {
-    tft.fillRoundRect(lx - 2, y + 4, 52, 54, 4, face);
-    tft.fillRoundRect(rx - 2, y + 4, 52, 54, 4, face);
-    tft.fillRect(lx + 10, y + 18, 10, 7, cut);
-    tft.fillRect(lx + 22, y + 27, 18, 6, cut);
-    tft.fillRect(rx + 11, y + 17, 24, 7, cut);
-    tft.fillRect(rx + 36, y + 17, 6, 26, cut);
-    return;
-  }
-  if (state == "permission") {
-    tft.drawRoundRect(lx - 4, y + 2, 52, 60, 6, face);
-    tft.drawRoundRect(rx - 4, y + 2, 52, 60, 6, face);
-    tft.fillRect(lx + 26, y + 18, 8, 18, face);
-    tft.fillRect(rx + 10, y + 18, 8, 18, face);
-    tft.fillCircle(120, 166, 5, face);
-    return;
-  }
-  if (state == "usage_low") {
-    tft.fillRoundRect(lx - 2, y + 28, 48, 12, 4, face);
-    tft.fillRoundRect(rx - 2, y + 28, 48, 12, 4, face);
-    drawThickLine(102, 164, 138, 164, 2, face);
-    return;
-  }
-  if (state == "blocked") {
-    drawThickLine(lx, y + 26, lx + 46, y + 20, 5, face);
-    drawThickLine(rx, y + 20, rx + 46, y + 26, 5, face);
-    tft.fillRoundRect(86, 160, 68, 8, 3, face);
-    return;
-  }
-  if (state == "error" || state == "usage_critical") {
-    drawXEye(lx + 2, y + 8, face);
-    drawXEye(rx + 2, y + 8, face);
-    tft.fillRoundRect(104, 162, 34, 7, 2, face);
-    return;
-  }
-  if (state == "success") {
-    drawThickLine(lx + 2, y + 32, lx + 20, y + 18, 4, face);
-    drawThickLine(lx + 20, y + 18, lx + 42, y + 32, 4, face);
-    drawThickLine(rx + 2, y + 32, rx + 20, y + 18, 4, face);
-    drawThickLine(rx + 20, y + 18, rx + 42, y + 32, 4, face);
-    drawThickLine(106, 164, 118, 176, 3, face);
-    drawThickLine(118, 176, 140, 150, 3, face);
-    return;
-  }
-  if (state == "compact") {
-    tft.fillRoundRect(lx - 6, y + 28, 54, 12, 4, face);
-    tft.fillRoundRect(rx - 6, y + 28, 54, 12, 4, face);
-    drawThickLine(100, 164, 114, 164, 2, face);
-    drawThickLine(140, 164, 126, 164, 2, face);
-    return;
-  }
-  drawEyePair(lx, rx, y, 40, 60, face);
+  drawCodexMouth(state, face);
+}
+
+// ── Claude mouth: rounded / arc (warm, organic) ──
+void drawClaudeMouth(const String& state, uint16_t f) {
+  const int16_t cx = 120, my = 168;
+  if (state == "thinking")        drawArcLine(cx, my - 6, 10, 205, 335, 2, f);        // pensive wave
+  else if (state == "reading")    tft.fillRoundRect(cx - 15, my - 3, 30, 6, 3, f);
+  else if (state == "writing")    drawArcLine(cx, my + 4, 12, 200, 340, 2, f);        // down-focus
+  else if (state == "shell")      tft.fillRoundRect(cx - 5, my - 3, 18, 6, 2, f);
+  else if (state == "permission") tft.drawCircle(cx, my, 8, f);                       // open O
+  else if (state == "compact")    tft.fillRoundRect(cx - 18, my - 2, 36, 4, 2, f);
+  else if (state == "success")    drawArcLine(cx, my - 8, 20, 25, 155, 3, f);         // big smile
+  else if (state == "blocked")    drawArcLine(cx, my + 12, 14, 200, 340, 2, f);       // small frown
+  else if (state == "error")      drawArcLine(cx, my + 12, 14, 200, 340, 3, f);       // frown
+  else if (state == "usage_critical") drawArcLine(cx, my + 8, 10, 200, 340, 2, f);    // faint weak frown
+  else if (state == "usage_low")  tft.fillRoundRect(cx - 13, my - 2, 26, 5, 2, f);
+  else                            drawArcLine(cx, my - 2, 12, 205, 335, 2, f);
+}
+
+// Claude-only warm cheeks (core personality split; Codex never gets these)
+void drawClaudeBlush(const String& state, const AgentTheme& theme) {
+  if (state == "error" || state == "usage_critical" || state == "blocked") return;
+  int16_t y = 152 + anim.breathY;
+  bool bright = (state == "success");
+  uint16_t c = bright ? tft.color565(214, 84, 58) : tft.color565(198, 96, 74);
+  tft.fillCircle(72, y, bright ? 11 : 9, c);
+  tft.fillCircle(168, y, bright ? 11 : 9, c);
 }
 
 void drawClaudeExpression(const String& state, const AgentTheme& theme) {
-  const int16_t lx = 70, rx = 150, y = 100;
+  const int16_t lx = 70, rx = 150, baseY = 100 + anim.breathY;
   uint16_t face = theme.face;
+  uint16_t cut = statusBgForState(state, theme);
 
   if (state == "sleeping" || state == "idle") {
-    drawArcLine(lx + 18, y + 24, 18, 205, 335, 3, face);
-    drawArcLine(rx + 18, y + 24, 18, 205, 335, 3, face);
+    drawArcLine(lx + 17, baseY + 24, 18, 200, 340, 3, face);
+    drawArcLine(rx + 17, baseY + 24, 18, 200, 340, 3, face);
     tft.setTextColor(tft.color565(255, 210, 160)); tft.setTextSize(2);
     tft.setCursor(176, 76); tft.print("z");
     tft.setCursor(196, 58); tft.print("Z");
     return;
   }
-  if (state == "thinking") {
-    tft.fillRoundRect(lx, y, 34, 52, 12, face);
-    tft.fillRoundRect(rx, y, 34, 52, 12, face);
-    tft.fillCircle(lx + 23, y + 14, 6, statusBgForState(state, theme));
-    tft.fillCircle(rx + 23, y + 14, 6, statusBgForState(state, theme));
-    drawArcLine(120, 166, 12, 205, 335, 2, face);
+  if (state == "error") {
+    drawXEye(lx - 1, baseY + 2, face);
+    drawXEye(rx - 1, baseY + 2, face);
+    return;   // mouth drawn by caller after blush
+  }
+  if (state == "usage_critical") { // weary half-lidded eyes + sunken small pupils
+    int16_t ey = baseY + 22;
+    tft.fillRoundRect(lx, ey, 34, 13, 6, face);
+    tft.fillRoundRect(rx, ey, 34, 13, 6, face);
+    tft.fillCircle(lx + 17, ey + 8, 3, cut);
+    tft.fillCircle(rx + 17, ey + 8, 3, cut);
     return;
   }
-  if (state == "multi") {
-    tft.fillRoundRect(lx, y, 34, 52, 12, face);
-    tft.fillRoundRect(rx, y, 34, 52, 12, face);
-    tft.fillCircle(lx + 17, y + 12, 6, statusBgForState(state, theme));
-    tft.fillCircle(rx + 17, y + 12, 6, statusBgForState(state, theme));
-    tft.fillRoundRect(108, 166, 24, 5, 2, face);
+  if (state == "blocked") { // flat half-lidded eyes : listless / stuck
+    tft.fillRoundRect(lx, baseY + 28, 34, 12, 5, face);
+    tft.fillRoundRect(rx, baseY + 28, 34, 12, 5, face);
     return;
   }
-  if (state == "reading") {
-    drawArcLine(lx + 17, y + 28, 20, 195, 345, 3, face);
-    drawArcLine(rx + 17, y + 28, 20, 195, 345, 3, face);
-    tft.fillRoundRect(88, 154, 64, 10, 4, face);
+  if (state == "success") { // happy upward arcs
+    drawArcLine(lx + 17, baseY + 24, 20, 205, 335, 4, face);
+    drawArcLine(rx + 17, baseY + 24, 20, 205, 335, 4, face);
     return;
   }
-  if (state == "writing") {
-    drawArcLine(lx + 17, y + 28, 20, 210, 335, 3, face);
-    drawArcLine(rx + 17, y + 22, 20, 200, 325, 3, face);
-    drawThickLine(96, 164, 144, 158, 2, face);
-    return;
+
+  // generic rounded eye with blink + pupil; thinking/reading tilt the right eye (head-tilt)
+  const int16_t fullH = 50, w = 34;
+  int16_t h = anim.blinking ? 6 : fullH;
+  int16_t yTop = baseY + (fullH - h) / 2;
+  int16_t tilt = (state == "thinking") ? 7 : (state == "reading" ? 4 : 0);
+  int16_t r = min((int16_t)14, (int16_t)(h / 2));
+  tft.fillRoundRect(lx, yTop, w, h, r, face);
+  tft.fillRoundRect(rx, yTop + tilt, w, h, r, face);
+  if (!anim.blinking) {
+    int16_t px = 17 + anim.pupilDX, py = 13 + anim.pupilDY;
+    tft.fillCircle(lx + px, yTop + py, 6, cut);
+    tft.fillCircle(rx + px, yTop + tilt + py, 6, cut);
   }
-  if (state == "shell") {
-    tft.drawRoundRect(lx - 4, y + 2, 44, 46, 8, face);
-    tft.drawRoundRect(rx - 4, y + 2, 44, 46, 8, face);
-    drawThickLine(lx + 8, y + 18, lx + 17, y + 24, 2, face);
-    drawThickLine(lx + 17, y + 24, lx + 8, y + 30, 2, face);
-    drawThickLine(rx + 8, y + 28, rx + 26, y + 28, 2, face);
-    return;
-  }
-  if (state == "permission") {
-    tft.drawCircle(lx + 17, y + 26, 22, face);
-    tft.drawCircle(rx + 17, y + 26, 22, face);
-    tft.fillCircle(lx + 23, y + 20, 6, face);
-    tft.fillCircle(rx + 11, y + 20, 6, face);
-    tft.fillCircle(120, 166, 4, face);
-    return;
-  }
-  if (state == "usage_low") {
-    drawArcLine(lx + 17, y + 25, 19, 195, 345, 4, face);
-    drawArcLine(rx + 17, y + 25, 19, 195, 345, 4, face);
-    tft.fillRoundRect(104, 164, 32, 5, 2, face);
-    return;
-  }
-  if (state == "blocked") {
-    drawArcLine(lx + 17, y + 20, 20, 205, 335, 4, face);
-    drawArcLine(rx + 17, y + 20, 20, 205, 335, 4, face);
-    tft.fillRoundRect(92, 160, 56, 7, 3, face);
-    return;
-  }
-  if (state == "error" || state == "usage_critical") {
-    drawXEye(lx - 1, y + 2, face);
-    drawXEye(rx - 1, y + 2, face);
-    return;
-  }
-  if (state == "success") {
-    drawArcLine(lx + 17, y + 24, 20, 205, 335, 4, face);
-    drawArcLine(rx + 17, y + 24, 20, 205, 335, 4, face);
-    drawArcLine(120, 158, 20, 25, 155, 2, face);
-    return;
-  }
-  if (state == "compact") {
-    tft.fillRoundRect(lx - 8, y + 26, 48, 10, 4, face);
-    tft.fillRoundRect(rx - 8, y + 26, 48, 10, 4, face);
-    return;
-  }
-  drawEyePair(lx, rx, y, 34, 52, face);
 }
 
 void drawStatusExpression(const String& state, const AgentTheme& theme) {
-  String s = visualState(state);
-  if (theme.claude) drawClaudeExpression(s, theme);
-  else drawCodexExpression(s, theme);
+  String s = baseFaceState(visualState(state));
+  if (theme.claude) {
+    drawClaudeExpression(s, theme);
+    if (s != "sleeping" && s != "idle") {
+      drawClaudeBlush(s, theme);
+      drawClaudeMouth(s, theme.face);
+    }
+  } else {
+    drawCodexExpression(s, theme);         // Codex mouth drawn inside
+    drawCodexScanline(s, tft.color565(28, 78, 46));
+  }
 }
 
 void drawPixelStar(int16_t x, int16_t y, uint16_t col) {
   tft.fillRect(x + 4, y, 5, 13, col);
   tft.fillRect(x, y + 4, 13, 5, col);
-}
-
-void drawMiniTerminal(int16_t x, int16_t y, uint16_t frame, uint16_t line1, uint16_t line2) {
-  tft.fillRect(x, y, 58, 40, frame);
-  tft.fillRect(x + 2, y + 2, 54, 36, tft.color565(28, 29, 44));
-  tft.fillRect(x + 2, y + 2, 54, 6, tft.color565(42, 42, 60));
-  tft.fillRect(x + 6, y + 4, 3, 3, C_RED);
-  tft.fillRect(x + 12, y + 4, 3, 3, C_YELLOW);
-  tft.fillRect(x + 18, y + 4, 3, 3, C_GREEN);
-  tft.fillRect(x + 8, y + 17, 28, 4, line1);
-  tft.fillRect(x + 8, y + 26, 38, 3, line2);
-}
-
-void drawMiniKeyboard(int16_t x, int16_t y, uint16_t base, uint16_t key, uint16_t hot) {
-  tft.fillRect(x, y, 74, 18, tft.color565(38, 58, 66));
-  tft.fillRect(x, y + 2, 74, 13, base);
-  for (uint8_t row = 0; row < 3; row++) {
-    for (uint8_t col = 0; col < 8; col++) {
-      uint16_t c = ((row + col) % 6 == 0) ? hot : key;
-      tft.fillRect(x + 5 + col * 8 + (row == 1 ? 3 : 0), y + 4 + row * 4, 5, 2, c);
-    }
-  }
-}
-
-void drawHelmet(int16_t x, int16_t y, uint16_t col, uint16_t dark) {
-  tft.fillRect(x + 8, y + 10, 44, 14, col);
-  tft.fillRect(x + 13, y + 4, 34, 12, col);
-  tft.fillRect(x + 25, y + 2, 10, 22, dark);
-  tft.fillRect(x + 4, y + 22, 52, 6, dark);
-  tft.fillRect(x + 10, y + 24, 40, 4, col);
 }
 
 void drawOpenBook(int16_t x, int16_t y, uint16_t cover, uint16_t page, uint16_t ink) {
@@ -1059,15 +856,58 @@ void drawTinyBattery(int16_t x, int16_t y, uint16_t frame, uint16_t fill, bool c
   }
 }
 
-void drawBugProbe(int16_t x, int16_t y, uint16_t col, uint16_t bg) {
-  tft.fillRoundRect(x + 12, y + 10, 28, 22, 6, col);
-  tft.fillRect(x + 22, y + 4, 8, 8, col);
-  tft.fillRect(x + 18, y + 16, 5, 5, bg);
-  tft.fillRect(x + 30, y + 16, 5, 5, bg);
-  tft.drawLine(x + 8, y + 14, x, y + 8, col);
-  tft.drawLine(x + 44, y + 14, x + 52, y + 8, col);
-  tft.drawLine(x + 8, y + 24, x, y + 30, col);
-  tft.drawLine(x + 44, y + 24, x + 52, y + 30, col);
+// subagent: task-fork tree under the face (root spawns two children), pulse travels root->children
+void drawSubagentProp(const AgentTheme& theme) {
+  bool sq = theme.codex;
+  uint16_t node = theme.codex ? tft.color565(8, 18, 11) : tft.color565(194, 95, 63);
+  uint16_t dim  = theme.codex ? tft.color565(44, 122, 74) : tft.color565(143, 63, 43);
+  uint16_t lit  = theme.codex ? C_GREEN : tft.color565(255, 217, 196);
+  uint8_t phase = (millis() / 420) % 3;    // 0=root 1=left 2=right
+  drawThickLine(120, 188, 120, 205, 1, phase == 0 ? lit : dim);
+  drawThickLine(120, 205, 90, 216, 1, phase == 1 ? lit : dim);
+  drawThickLine(120, 205, 150, 216, 1, phase == 2 ? lit : dim);
+  // node(x,y,active)
+  int16_t nx[3] = {120, 90, 150}, ny[3] = {184, 218, 218};
+  for (uint8_t i = 0; i < 3; i++) {
+    bool on = (phase == i);
+    uint16_t edge = on ? lit : theme.face;
+    if (sq) {
+      tft.fillRoundRect(nx[i] - 12, ny[i] - 9, 24, 18, 3, node);
+      tft.drawRoundRect(nx[i] - 12, ny[i] - 9, 24, 18, 3, edge);
+      tft.fillRect(nx[i] - 4, ny[i] - 3, 8, 6, edge);
+    } else {
+      tft.fillCircle(nx[i], ny[i], on ? 11 : 10, node);
+      tft.drawCircle(nx[i], ny[i], on ? 11 : 10, edge);
+      tft.fillCircle(nx[i], ny[i], 3, edge);
+    }
+  }
+}
+
+// multi: parallel session lanes under the face, each with an async token
+void drawMultiProp(const AgentTheme& theme) {
+  uint16_t face = theme.face;
+  int16_t ys[3] = {198, 212, 226}, x0 = 62, x1 = 178;
+  int16_t span = x1 - x0;
+  float speeds[3] = {0.42f, 0.55f, 0.36f};
+  float tSec = millis() / 1000.0f;
+  for (uint8_t i = 0; i < 3; i++) {
+    int16_t y = ys[i];
+    if (theme.codex) {
+      tft.fillRect(x0, y - 2, span, 4, tft.color565(16, 36, 23));
+      drawThickLine(48, y - 5, 54, y, 1, face); drawThickLine(54, y, 48, y + 5, 1, face);
+      float p = fmod(tSec * speeds[i] + i * 0.27f, 1.0f);
+      p = floorf(p * 8) / 8.0f;                        // discrete tick
+      int16_t x = x0 + 6 + (int16_t)(p * (span - 16));
+      tft.fillRect((x / 2) * 2, y - 5, 10, 10, face);
+    } else {
+      tft.fillRoundRect(x0, y - 2, span, 4, 2, tft.color565(230, 175, 150));
+      float p = fmod(tSec * speeds[i] + i * 0.31f, 1.0f);
+      int16_t x = x0 + 6 + (int16_t)(p * (span - 12));
+      int16_t yy = y + (int16_t)lroundf(sin(tSec * 2 + i) * 1.5f);
+      tft.fillCircle(x - 8, yy, 3, tft.color565(120, 70, 52));
+      tft.fillCircle(x, yy, 6, face);
+    }
+  }
 }
 
 void drawStatusProp(const String& state, const AgentTheme& theme) {
@@ -1075,186 +915,109 @@ void drawStatusProp(const String& state, const AgentTheme& theme) {
   uint16_t face = theme.face;
   uint16_t bg = statusBgForState(state, theme);
 
+  if (state == "subagent") { drawSubagentProp(theme); return; }
+  if (state == "multi")    { drawMultiProp(theme); return; }
+
   if (state == "thinking") {
-    uint16_t bubble = theme.codex ? tft.color565(210, 255, 226) : tft.color565(255, 238, 198);
-    tft.fillCircle(166, 58, 5, bubble);
-    tft.fillCircle(178, 44, 8, bubble);
-    tft.fillRoundRect(188, 22, 34, 28, 7, bubble);
-    tft.fillRect(198, 34, 4, 4, face);
-    tft.fillRect(208, 34, 4, 4, face);
+    uint16_t bubble = theme.codex ? tft.color565(210, 255, 226) : tft.color565(255, 227, 211);
+    tft.fillCircle(145, 54, 4, bubble);
+    tft.fillCircle(137, 64, 3, bubble);
+    tft.fillRoundRect(150, 24, 40, 26, 8, bubble);
+    uint8_t lit = (millis() / 320) % 3;
+    uint16_t off = theme.codex ? tft.color565(127, 207, 156) : tft.color565(201, 141, 118);
+    for (uint8_t i = 0; i < 3; i++) tft.fillCircle(160 + i * 10, 37, 3, i == lit ? face : off);
     return;
   }
 
   if (state == "shell") {
-    drawMiniTerminal(152, 28, face, C_GREEN, C_BLUE);
+    tft.fillRoundRect(78, 196, 84, 30, 4, theme.codex ? tft.color565(12, 20, 16) : tft.color565(58, 36, 28));
+    drawThickLine(88, 205, 96, 211, 1, C_GREEN); drawThickLine(96, 211, 88, 217, 1, C_GREEN);
+    tft.fillRoundRect(104, 208, 22, 4, 1, C_BLUE);
+    if ((millis() / 500) % 2 == 0) tft.fillRect(150, 204, 6, 12, C_GREEN);
     return;
   }
 
   if (state == "writing") {
-    drawMiniKeyboard(83, 182, tft.color565(82, 118, 132), tft.color565(124, 158, 168), C_GREEN);
-    tft.fillRect(158, 172, 9, 32, col);
-    tft.fillTriangle(158, 204, 167, 204, 162, 214, col);
+    tft.fillRoundRect(74, 198, 40, 5, 2, C_GREEN);
+    float g = 0.3f + 0.7f * ((millis() % 1400) / 1400.0f);
+    tft.fillRoundRect(74, 208, (int16_t)(60 * g), 5, 2, C_BLUE);
+    tft.fillRoundRect(74, 218, 30, 5, 2, col);
     return;
   }
 
   if (state == "reading") {
-    tft.fillRoundRect(76, 170, 36, 20, 6, col);
-    tft.fillRoundRect(128, 170, 36, 20, 6, col);
-    tft.fillRect(112, 178, 16, 4, col);
-    tft.fillRect(82, 176, 24, 4, bg);
-    tft.fillRect(134, 176, 24, 4, bg);
-    drawOpenBook(81, 196, col, theme.codex ? tft.color565(214, 244, 224) : tft.color565(255, 224, 184), face);
-    tft.fillRect(54, 64, 4, 4, C_BLUE);
-    tft.fillRect(184, 58, 5, 5, C_GREEN);
+    drawOpenBook(81, 196, col, theme.codex ? tft.color565(214, 244, 224) : tft.color565(255, 224, 208), face);
     return;
   }
 
   if (state == "permission") {
-    drawBugProbe(28, 34, col, bg);
-    tft.drawCircle(177, 55, 18, col);
-    drawThickLine(190, 68, 207, 85, 2, col);
-    tft.fillRect(172, 51, 10, 12, col);
-    tft.fillRect(174, 47, 6, 8, bg);
+    if ((millis() / 500) % 2 == 0) {
+      tft.fillRoundRect(100, 196, 40, 30, 6, col);
+      tft.setTextColor(bg); tft.setTextSize(3);
+      tft.setCursor(112, 200); tft.print("?");
+    }
     return;
   }
 
   if (state == "blocked") {
-    uint16_t stripe = theme.codex ? C_YELLOW : tft.color565(255, 224, 184);
-    tft.fillRoundRect(64, 36, 112, 18, 3, face);
-    for (uint8_t i = 0; i < 5; i++) {
-      int16_t x = 70 + i * 21;
-      tft.fillTriangle(x, 37, x + 12, 37, x, 53, stripe);
+    uint16_t stripe = theme.codex ? C_YELLOW : tft.color565(255, 217, 196);
+    tft.fillRoundRect(72, 200, 96, 16, 3, face);
+    for (uint8_t i = 0; i < 4; i++) {
+      int16_t x = 78 + i * 23;
+      tft.fillTriangle(x, 201, x + 11, 201, x, 215, stripe);
     }
-    tft.fillRect(82, 54, 8, 18, face);
-    tft.fillRect(150, 54, 8, 18, face);
     return;
   }
 
-  if (state == "error" || state == "usage_critical") {
-    uint16_t err = theme.codex ? C_RED : C_WHITE;
-    if (state == "usage_critical") {
-      drawTinyBattery(170, 38, err, C_RED, true);
-      tft.fillTriangle(100, 26, 78, 66, 122, 66, err);
-      tft.fillTriangle(100, 34, 86, 62, 114, 62, bg);
-      tft.fillRect(97, 43, 6, 12, err);
-      tft.fillRect(97, 58, 6, 5, err);
-    } else {
-      tft.fillTriangle(120, 24, 92, 72, 148, 72, err);
-      tft.fillTriangle(120, 32, 100, 68, 140, 68, bg);
-      tft.fillRect(117, 42, 6, 16, err);
-      tft.fillRect(117, 62, 6, 5, err);
+  if (state == "error") {
+    uint16_t boxfill = theme.codex ? tft.color565(25, 7, 8) : tft.color565(255, 241, 233);
+    tft.fillRoundRect(76, 196, 88, 30, theme.codex ? 3 : 8, boxfill);
+    tft.drawRoundRect(76, 196, 88, 30, theme.codex ? 3 : 8, C_RED);
+    drawThickLine(86, 204, 93, 210, 1, C_RED); drawThickLine(93, 210, 86, 216, 1, C_RED);
+    if ((millis() / 130) % 2 == 0) {   // jagged crack flicker
+      drawThickLine(118, 199, 112, 208, 1, C_RED);
+      drawThickLine(112, 208, 124, 216, 1, C_RED);
+      drawThickLine(124, 216, 118, 224, 1, C_RED);
     }
-    tft.fillRect(82, 178, 76, 6, face);
+    drawThickLine(142, 204, 154, 216, 1, C_RED); drawThickLine(154, 204, 142, 216, 1, C_RED);
+    return;
+  }
+
+  if (state == "usage_critical") {
+    drawTinyBattery(99, 198, C_RED, C_RED, true);
+    if ((millis() / 550) % 2 == 0) tft.fillRect(104, 204, 7, 14, C_RED);  // last bar blinks
+    // pulsing red alert border
+    if ((millis() / 400) % 2 == 0) {
+      tft.drawRect(3, 3, DISP_W - 6, DISP_H - 6, C_RED);
+      tft.drawRect(4, 4, DISP_W - 8, DISP_H - 8, C_RED);
+    }
     return;
   }
 
   if (state == "success") {
-    drawPixelStar(48, 56, C_YELLOW);
-    drawPixelStar(180, 48, C_YELLOW);
-    drawPixelStar(196, 78, C_YELLOW);
+    if ((millis() / 320) % 2 == 0) drawPixelStar(44, 60, C_YELLOW);
+    else drawPixelStar(184, 52, C_YELLOW);
+    drawPixelStar(196, 82, C_YELLOW);
     return;
   }
 
   if (state == "compact") {
-    tft.fillRoundRect(48, 42, 42, 18, 3, col);
-    tft.fillRoundRect(150, 42, 42, 18, 3, col);
-    drawThickLine(90, 51, 112, 51, 2, col);
-    drawThickLine(150, 51, 128, 51, 2, col);
-    tft.fillTriangle(112, 43, 112, 59, 124, 51, col);
-    tft.fillTriangle(128, 43, 128, 59, 116, 51, col);
-    return;
-  }
-
-  if (state == "subagent") {
-    drawArcLine(120, 118, 76, 205, 335, 3, col);
-    tft.fillRoundRect(44, 94, 15, 34, 5, col);
-    tft.fillRoundRect(181, 94, 15, 34, 5, col);
-    drawPixelStar(70, 50, col);
-    drawPixelStar(160, 46, col);
-    return;
-  }
-
-  if (state == "multi" || state == "multi-active") {
-    tft.fillCircle(83, 50, 7, C_YELLOW);
-    tft.fillCircle(120, 38, 7, C_GREEN);
-    tft.fillCircle(157, 50, 7, C_RED);
+    drawThickLine(92, 210, 112, 210, 2, col);
+    drawThickLine(148, 210, 128, 210, 2, col);
+    tft.fillTriangle(112, 202, 112, 218, 122, 210, col);
+    tft.fillTriangle(128, 202, 128, 218, 118, 210, col);
     return;
   }
 
   if (state == "usage_low") {
-    drawTinyBattery(172, 40, C_YELLOW, C_RED, false);
-    tft.fillRect(60, 60, 9, 3, C_YELLOW);
-    tft.fillRect(184, 80, 7, 3, C_YELLOW);
+    drawTinyBattery(100, 198, C_YELLOW, C_RED, false);
     return;
-  }
-}
-
-void drawStateIcon(const String& state, const AgentTheme& theme) {
-  if (state == "multi" || state == "multi-active" || state == "subagent") return;
-  uint16_t col = stateAccent(state, theme);
-  uint16_t badge = theme.codex ? tft.color565(8, 24, 13) : tft.color565(255, 176, 104);
-  if (state == "error" || state == "blocked" || state == "usage_critical") badge = tft.color565(72, 12, 12);
-  if (state == "permission" || state == "compact" || state == "usage_low") badge = tft.color565(72, 54, 8);
-  if (state == "success") badge = tft.color565(6, 52, 24);
-  const int16_t bx = 12, by = 12;
-  const int16_t x = bx + 7, y = by + 7;
-  if (state == "sleeping" || state == "idle") return;
-  tft.fillRoundRect(bx, by, 50, 50, 8, badge);
-  tft.drawRoundRect(bx, by, 50, 50, 8, col);
-  if (state == "thinking") {
-    tft.drawCircle(x + 18, y + 14, 12, col);
-    tft.drawCircle(x + 18, y + 14, 11, col);
-    tft.fillRect(x + 12, y + 27, 13, 6, col);
-    tft.drawFastHLine(x + 13, y + 37, 11, col);
-    tft.drawFastVLine(x + 18, y - 2, 7, col);
-  } else if (state == "reading") {
-    tft.drawRoundRect(x, y + 8, 36, 27, 4, col);
-    tft.drawRoundRect(x + 1, y + 9, 34, 25, 4, col);
-    tft.drawFastVLine(x + 18, y + 9, 26, col);
-    tft.drawLine(x + 1, y + 14, x + 16, y + 18, col);
-    tft.drawLine(x + 35, y + 14, x + 20, y + 18, col);
-  } else if (state == "writing") {
-    drawThickLine(x + 4, y + 34, x + 32, y + 6, 3, col);
-    tft.fillTriangle(x + 32, y + 6, x + 38, y + 14, x + 25, y + 12, col);
-    drawThickLine(x + 2, y + 40, x + 30, y + 40, 1, col);
-  } else if (state == "shell") {
-    tft.drawRoundRect(x, y + 9, 38, 29, 5, col);
-    drawThickLine(x + 7, y + 18, x + 14, y + 24, 2, col);
-    drawThickLine(x + 14, y + 24, x + 7, y + 30, 2, col);
-    drawThickLine(x + 21, y + 30, x + 34, y + 30, 2, col);
-  } else if (state == "permission") {
-    tft.drawRoundRect(x + 6, y + 21, 27, 20, 4, col);
-    tft.drawCircle(x + 19, y + 21, 10, col);
-    tft.fillRect(x + 9, y + 21, 20, 7, badge);
-    tft.fillCircle(x + 19, y + 31, 3, col);
-  } else if (state == "blocked") {
-    tft.drawCircle(x + 19, y + 21, 18, col);
-    drawThickLine(x + 7, y + 34, x + 31, y + 10, 3, col);
-  } else if (state == "error" || state == "usage_critical") {
-    tft.drawTriangle(x + 19, y + 4, x + 1, y + 39, x + 37, y + 39, col);
-    tft.drawTriangle(x + 19, y + 7, x + 5, y + 37, x + 33, y + 37, col);
-    tft.fillRect(x + 17, y + 16, 5, 14, col);
-    tft.fillCircle(x + 19, y + 34, 3, col);
-  } else if (state == "success") {
-    drawThickLine(x + 4, y + 24, x + 15, y + 35, 3, col);
-    drawThickLine(x + 15, y + 35, x + 37, y + 9, 3, col);
-  } else if (state == "compact") {
-    drawThickLine(x + 3, y + 22, x + 17, y + 22, 2, col);
-    drawThickLine(x + 3, y + 22, x + 10, y + 15, 2, col);
-    drawThickLine(x + 3, y + 22, x + 10, y + 29, 2, col);
-    drawThickLine(x + 36, y + 22, x + 22, y + 22, 2, col);
-    drawThickLine(x + 36, y + 22, x + 29, y + 15, 2, col);
-    drawThickLine(x + 36, y + 22, x + 29, y + 29, 2, col);
-  } else if (state == "usage_low") {
-    tft.drawCircle(x + 19, y + 21, 18, col);
-    tft.fillRect(x + 17, y + 10, 5, 19, col);
-    tft.fillCircle(x + 19, y + 34, 3, col);
   }
 }
 
 void drawActivityCorner(const String& state, uint8_t active, const AgentTheme& theme) {
   bool hasSubagent = (state == "subagent");
-  bool hasMulti = (state == "multi" || state == "multi-active" || active > 1);
+  bool hasMulti = (state == "multi" || active > 1);
   if (!hasSubagent && !hasMulti) return;
   uint16_t bg = theme.codex ? tft.color565(8, 18, 11) : tft.color565(245, 126, 70);
   uint16_t col = theme.codex ? C_GREEN : tft.color565(36, 26, 18);
@@ -1275,8 +1038,7 @@ void drawStatusView() {
   termMode = false;
   AgentTheme theme = agentTheme(ccSource);
   tft.fillScreen(statusBgForState(ccState, theme));
-  drawStateIcon(ccState, theme);
-  drawActivityCorner(ccState, ccActive, theme);
+  drawActivityCorner(ccState, ccActive, theme);   // face is the main signal; no top-left icon layer
   drawStatusExpression(ccState, theme);
   drawStatusProp(ccState, theme);
 }
@@ -1992,6 +1754,9 @@ void applyCcState(String source, String state, String label, int active) {
   ccState = shortText(state, 20);
   ccLabel = shortText(label, 20);
   ccActive = constrain(active, 0, 9);
+  anim.stateEnterMs = millis();
+  anim.lastBlinkMs = anim.stateEnterMs;
+  anim.drawnState = ccState;
   drawStatusView();
 }
 
@@ -2096,16 +1861,6 @@ void routeDrawStroke() {
 void routeBacklight() {
   setBacklight(server.hasArg("on") && server.arg("on") == "1");
   server.send(200, "application/json", "{\"ok\":1}");
-}
-
-// Convert RGB565 back to #RRGGBB for state endpoint
-String rgb565ToHex(uint16_t c) {
-  uint8_t r = ((c >> 11) & 0x1F) << 3;
-  uint8_t g = ((c >> 5)  & 0x3F) << 2;
-  uint8_t b = (c & 0x1F) << 3;
-  char buf[8];
-  snprintf(buf, sizeof(buf), "#%02x%02x%02x", r, g, b);
-  return String(buf);
 }
 
 void routeState() {
@@ -2243,7 +1998,52 @@ void setup() {
 //  LOOP
 // ═════════════════════════════════════════════════════════════
 
+// Non-blocking animation heartbeat for the status face.
+// Recomputes breath / blink / pupil from millis() and repaints the status view.
+void tickStatusAnim() {
+  if (currentView != VIEW_CC_STATUS || termMode) return;
+  uint32_t now = millis();
+  if (now - anim.lastTickMs < 90) return;   // ~11fps repaint cap
+  anim.lastTickMs = now;
+
+  String vs = visualState(ccState);
+
+  // breathing triangle wave -> -2..2, period depends on state
+  uint32_t period = 3500;
+  if (vs == "sleeping") period = 5200;
+  else if (vs == "error" || vs == "usage_critical") period = 1100;
+  else if (vs == "blocked") period = 6000;
+  else if (vs == "success" || vs == "permission") period = 2600;
+  float bp = (float)(now % period) / period;      // 0..1
+  float tri = 1.0f - fabs(bp * 2.0f - 1.0f);       // 0..1..0
+  anim.breathY = (int8_t)lroundf((tri - 0.5f) * 4.0f);
+
+  // irregular blink (states that keep open eyes)
+  bool canBlink = !(vs == "sleeping" || vs == "error" || vs == "usage_critical" ||
+                    vs == "blocked" || vs == "success");
+  anim.blinking = false;
+  if (canBlink) {
+    if (now - anim.lastBlinkMs > anim.blinkGap) {
+      anim.lastBlinkMs = now;
+      anim.blinkGap = 1800 + (uint32_t)random(3200);
+      if (random(100) < 15) anim.blinkGap = 220;   // occasional double blink
+    }
+    anim.blinking = (now - anim.lastBlinkMs) < 120;
+  }
+
+  // pupil drift by state (Codex snaps, Claude glides — handled in eye drawing)
+  anim.pupilDX = 0; anim.pupilDY = 0;
+  if (vs == "thinking") anim.pupilDY = -4;
+  else if (vs == "writing") anim.pupilDY = 4;
+  else if (vs == "shell") anim.pupilDX = -4;
+  else if (vs == "reading") anim.pupilDX = (int8_t)lroundf(sin(now / 700.0) * 6);
+  else if (vs == "permission") anim.pupilDX = (int8_t)lroundf(sin(now / 260.0) * 5);
+
+  drawStatusView();
+}
+
 void loop() {
   server.handleClient();
   handleSerialInput();
+  tickStatusAnim();
 }

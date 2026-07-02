@@ -11,7 +11,7 @@
       --muted: #706b62;
       --line: #d8d1c3;
       --codex: #50dc82;
-      --claude: #da1100;
+      --claude: #d97757;
     }
     * { box-sizing: border-box; }
     body {
@@ -45,6 +45,24 @@
       max-width: 720px;
       color: var(--muted);
     }
+    .controls {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      margin-top: 12px;
+      flex-wrap: wrap;
+    }
+    .controls button {
+      border: 1px solid var(--line);
+      background: #fffaf0;
+      border-radius: 8px;
+      padding: 6px 12px;
+      font: inherit;
+      font-weight: 650;
+      cursor: pointer;
+      color: var(--ink);
+    }
+    .controls button.on { background: var(--ink); color: var(--paper); border-color: var(--ink); }
     .legend {
       display: flex;
       gap: 10px;
@@ -59,7 +77,7 @@
       font-weight: 650;
     }
     .chip.codex { color: #096b39; }
-    .chip.claude { color: #a33e22; }
+    .chip.claude { color: #b4552f; }
     .grid {
       display: grid;
       grid-template-columns: repeat(auto-fill, minmax(184px, 1fr));
@@ -102,11 +120,15 @@
     <header>
       <div>
         <h1>cc-mochi expression preview</h1>
-        <div class="note">Static canvas preview of the firmware status language: no agent logo in running states, source identity by background, multi/subagent as corner markers.</div>
+        <div class="note">Live preview of the firmware status language. The face is the main signal: breathing + irregular blinks give it life, each state has its own eyes and mouth, props sit close under the face. Identity is by background color only — no corner logo.</div>
+        <div class="controls">
+          <button id="toggleAnim" class="on">动画: 开</button>
+          <button id="toggleFreeze">静态对照(峰值帧)</button>
+        </div>
       </div>
       <div class="legend">
-        <div class="chip codex">Codex: black + green, terminal geometry</div>
-        <div class="chip claude">Claude: warm orange, softer arcs</div>
+        <div class="chip codex">Codex: 黑底荧光绿 · 方形像素脸</div>
+        <div class="chip claude">Claude: 珊瑚橙 · 圆润弧线脸</div>
       </div>
     </header>
     <section class="grid" id="grid"></section>
@@ -121,156 +143,50 @@
     const W = 240;
 
     const colors = {
-      codex: { bg:'#000000', sleep:'#040705', face:'#50dc82', icon:'#50dc82', badge:'#08180d', multi:'#08120b' },
-      claude: { bg:'#da1100', sleep:'#da1100', face:'#1c1814', icon:'#241a12', badge:'#ffb068', multi:'#f57e46' },
+      codex:  { bg:'#000000', sleep:'#040705', face:'#50dc82', multi:'#08120b' },
+      claude: { bg:'#d97757', sleep:'#d97757', face:'#241814', multi:'#c25f3f' },
       yellow:'#f5b946', blue:'#4896e6', red:'#e64640', green:'#50dc82'
     };
 
+    // ── theme / semantics ────────────────────────────────────────
     function theme(agent, state) {
       const t = colors[agent];
       let bg = t.bg;
       if (state === 'sleeping') bg = t.sleep;
       if (state === 'error' || state === 'usage_critical') bg = agent === 'codex' ? '#120405' : t.bg;
       if (state === 'blocked') bg = agent === 'codex' ? '#120e04' : t.bg;
-      return {...t, bg};
+      return { ...t, bg };
     }
     function visualState(state) {
-      if (state === 'multi-active') return 'multi';
-      return state === 'subagent' ? 'thinking' : state;
+      // subagent/multi are drawn on top of a calm base face, keep them distinct
+      if (state === 'subagent') return 'subagent';
+      return state;
+    }
+    // base (calm, focused) eyes used under subagent/multi overlays
+    function baseFaceState(state) {
+      if (state === 'subagent' || state === 'multi') return 'reading';
+      return state;
     }
     function accent(state, t) {
       if (state === 'error' || state === 'blocked' || state === 'usage_critical') return colors.red;
       if (state === 'permission' || state === 'compact' || state === 'usage_low') return colors.yellow;
       if (state === 'success') return colors.green;
       if (state === 'shell' || state === 'reading' || state === 'writing') return colors.blue;
-      return t.icon;
+      return t.face;
     }
-    function pixelStar(ctx, x, y, c) {
-      ctx.fillStyle = c;
-      ctx.fillRect(x + 4, y, 5, 13);
-      ctx.fillRect(x, y + 4, 13, 5);
-    }
-    function miniTerminal(ctx, x, y, t) {
-      ctx.fillStyle = t.face; ctx.fillRect(x, y, 58, 40);
-      ctx.fillStyle = '#1c1d2c'; ctx.fillRect(x + 2, y + 2, 54, 36);
-      ctx.fillStyle = '#2a2a3c'; ctx.fillRect(x + 2, y + 2, 54, 6);
-      ctx.fillStyle = colors.red; ctx.fillRect(x + 6, y + 4, 3, 3);
-      ctx.fillStyle = colors.yellow; ctx.fillRect(x + 12, y + 4, 3, 3);
-      ctx.fillStyle = colors.green; ctx.fillRect(x + 18, y + 4, 3, 3);
-      ctx.fillStyle = colors.green; ctx.fillRect(x + 8, y + 17, 28, 4);
-      ctx.fillStyle = colors.blue; ctx.fillRect(x + 8, y + 26, 38, 3);
-    }
-    function miniKeyboard(ctx, x, y) {
-      ctx.fillStyle = '#2a4048'; ctx.fillRect(x, y, 74, 18);
-      ctx.fillStyle = '#527684'; ctx.fillRect(x, y + 2, 74, 13);
-      for (let row = 0; row < 3; row++) {
-        for (let col = 0; col < 8; col++) {
-          ctx.fillStyle = ((row + col) % 6 === 0) ? colors.green : '#7c9ea8';
-          ctx.fillRect(x + 5 + col * 8 + (row === 1 ? 3 : 0), y + 4 + row * 4, 5, 2);
-        }
-      }
-    }
-    function openBook(ctx, x, y, cover, page, ink) {
-      rr(ctx, x, y, 78, 34, 5, cover);
-      rr(ctx, x+4, y+4, 32, 26, 3, page);
-      rr(ctx, x+42, y+4, 32, 26, 3, page);
-      ctx.fillStyle = ink; ctx.fillRect(x+38,y+3,2,29);
-      ctx.fillRect(x+10,y+12,20,2); ctx.fillRect(x+10,y+19,16,2);
-      ctx.fillRect(x+48,y+12,18,2); ctx.fillRect(x+48,y+19,22,2);
-    }
-    function tinyBattery(ctx, x, y, frame, fill, critical) {
-      rr(ctx, x, y, 42, 22, 4, null, frame);
-      ctx.fillStyle = frame; ctx.fillRect(x+42,y+7,5,8);
-      ctx.fillStyle = fill; ctx.fillRect(x+5,y+5,critical ? 8 : 18,12);
-      if (critical) {
-        ctx.fillStyle = frame; ctx.fillRect(x+20,y+4,5,14); ctx.fillRect(x+20,y+4,15,5);
-      }
-    }
-    function bugProbe(ctx, x, y, c, bg) {
-      rr(ctx, x+12,y+10,28,22,6,c);
-      ctx.fillStyle = c; ctx.fillRect(x+22,y+4,8,8);
-      ctx.fillStyle = bg; ctx.fillRect(x+18,y+16,5,5); ctx.fillRect(x+30,y+16,5,5);
-      line(ctx,x+8,y+14,x,y+8,2,c); line(ctx,x+44,y+14,x+52,y+8,2,c);
-      line(ctx,x+8,y+24,x,y+30,2,c); line(ctx,x+44,y+24,x+52,y+30,2,c);
-    }
-    function statusProp(ctx, state, t, agent) {
-      const c = accent(state, t);
-      if (state === 'thinking') {
-        const bubble = agent === 'codex' ? '#d2ffe2' : '#ffeec6';
-        ctx.fillStyle = bubble;
-        ctx.beginPath(); ctx.arc(166,58,5,0,7); ctx.arc(178,44,8,0,7); ctx.fill();
-        rr(ctx, 188, 22, 34, 28, 7, bubble);
-        ctx.fillStyle = t.face; ctx.fillRect(198,34,4,4); ctx.fillRect(208,34,4,4);
-      } else if (state === 'shell') {
-        miniTerminal(ctx, 152, 28, t);
-      } else if (state === 'writing') {
-        miniKeyboard(ctx, 83, 182);
-        ctx.fillStyle = c; ctx.fillRect(158, 172, 9, 32);
-        ctx.beginPath(); ctx.moveTo(158,204); ctx.lineTo(167,204); ctx.lineTo(162,214); ctx.fill();
-      } else if (state === 'reading') {
-        rr(ctx,76,170,36,20,6,c); rr(ctx,128,170,36,20,6,c);
-        ctx.fillStyle = c; ctx.fillRect(112,178,16,4);
-        ctx.fillStyle = t.bg; ctx.fillRect(82,176,24,4); ctx.fillRect(134,176,24,4);
-        openBook(ctx,81,196,c,agent === 'codex' ? '#d6f4e0' : '#ffe0b8',t.face);
-        ctx.fillStyle = colors.blue; ctx.fillRect(54,64,4,4);
-        ctx.fillStyle = colors.green; ctx.fillRect(184,58,5,5);
-      } else if (state === 'permission') {
-        bugProbe(ctx,28,34,c,t.bg);
-        ctx.strokeStyle = c; ctx.lineWidth = 4;
-        ctx.beginPath(); ctx.arc(177,55,18,0,7); ctx.stroke();
-        line(ctx,190,68,207,85,5,c);
-        ctx.fillStyle = c; ctx.fillRect(172,51,10,12);
-      } else if (state === 'blocked') {
-        const stripe = agent === 'codex' ? colors.yellow : '#ffe0b8';
-        rr(ctx,64,36,112,18,3,t.face);
-        ctx.fillStyle = stripe;
-        for (let i=0;i<5;i++) { const x = 70 + i * 21; ctx.beginPath(); ctx.moveTo(x,37); ctx.lineTo(x+12,37); ctx.lineTo(x,53); ctx.fill(); }
-        ctx.fillStyle = t.face; ctx.fillRect(82,54,8,18); ctx.fillRect(150,54,8,18);
-      } else if (state === 'error' || state === 'usage_critical') {
-        const err = agent === 'codex' ? colors.red : '#fff';
-        if (state === 'usage_critical') {
-          tinyBattery(ctx,170,38,err,colors.red,true);
-          ctx.fillStyle = err; ctx.beginPath(); ctx.moveTo(100,26); ctx.lineTo(78,66); ctx.lineTo(122,66); ctx.fill();
-          ctx.fillStyle = t.bg; ctx.beginPath(); ctx.moveTo(100,34); ctx.lineTo(86,62); ctx.lineTo(114,62); ctx.fill();
-          ctx.fillStyle = err; ctx.fillRect(97,43,6,12); ctx.fillRect(97,58,6,5);
-        } else {
-          ctx.fillStyle = err; ctx.beginPath(); ctx.moveTo(120,24); ctx.lineTo(92,72); ctx.lineTo(148,72); ctx.fill();
-          ctx.fillStyle = t.bg; ctx.beginPath(); ctx.moveTo(120,32); ctx.lineTo(100,68); ctx.lineTo(140,68); ctx.fill();
-          ctx.fillStyle = err; ctx.fillRect(117,42,6,16); ctx.fillRect(117,62,6,5);
-        }
-        ctx.fillStyle = t.face; ctx.fillRect(82,178,76,6);
-      } else if (state === 'success') {
-        pixelStar(ctx,48,56,colors.yellow); pixelStar(ctx,180,48,colors.yellow); pixelStar(ctx,196,78,colors.yellow);
-      } else if (state === 'compact') {
-        rr(ctx,48,42,42,18,3,c); rr(ctx,150,42,42,18,3,c);
-        line(ctx,90,51,112,51,5,c); line(ctx,150,51,128,51,5,c);
-        ctx.fillStyle = c; ctx.beginPath(); ctx.moveTo(112,43); ctx.lineTo(112,59); ctx.lineTo(124,51); ctx.fill();
-        ctx.beginPath(); ctx.moveTo(128,43); ctx.lineTo(128,59); ctx.lineTo(116,51); ctx.fill();
-      } else if (state === 'subagent') {
-        arc(ctx,120,118,76,205,335,7,c);
-        rr(ctx,44,94,15,34,5,c);
-        rr(ctx,181,94,15,34,5,c);
-        pixelStar(ctx,70,50,c);
-        pixelStar(ctx,160,46,c);
-      } else if (state === 'multi') {
-        ctx.fillStyle = colors.yellow; ctx.beginPath(); ctx.arc(83,50,7,0,7); ctx.fill();
-        ctx.fillStyle = colors.green; ctx.beginPath(); ctx.arc(120,38,7,0,7); ctx.fill();
-        ctx.fillStyle = colors.red; ctx.beginPath(); ctx.arc(157,50,7,0,7); ctx.fill();
-      } else if (state === 'usage_low') {
-        tinyBattery(ctx,172,40,colors.yellow,colors.red,false);
-        ctx.fillStyle = colors.yellow; ctx.fillRect(60,60,9,3); ctx.fillRect(184,80,7,3);
-      }
-    }
+
+    // ── low level draw helpers ───────────────────────────────────
     function rr(ctx, x, y, w, h, r, fill, stroke) {
+      r = Math.min(r, w / 2, h / 2);
       ctx.beginPath();
-      ctx.moveTo(x+r, y);
-      ctx.arcTo(x+w, y, x+w, y+h, r);
-      ctx.arcTo(x+w, y+h, x, y+h, r);
-      ctx.arcTo(x, y+h, x, y, r);
-      ctx.arcTo(x, y, x+w, y, r);
+      ctx.moveTo(x + r, y);
+      ctx.arcTo(x + w, y, x + w, y + h, r);
+      ctx.arcTo(x + w, y + h, x, y + h, r);
+      ctx.arcTo(x, y + h, x, y, r);
+      ctx.arcTo(x, y, x + w, y, r);
       ctx.closePath();
       if (fill) { ctx.fillStyle = fill; ctx.fill(); }
-      if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = 2; ctx.stroke(); }
+      if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = 3; ctx.stroke(); }
     }
     function line(ctx, x1, y1, x2, y2, width, color) {
       ctx.strokeStyle = color; ctx.lineWidth = width; ctx.lineCap = 'round';
@@ -280,126 +196,444 @@
       ctx.strokeStyle = color; ctx.lineWidth = width; ctx.lineCap = 'round';
       ctx.beginPath(); ctx.arc(x, y, r, a0 * Math.PI / 180, a1 * Math.PI / 180); ctx.stroke();
     }
-    function xEye(ctx, x, y, c) {
-      line(ctx, x, y, x+38, y+44, 7, c);
-      line(ctx, x+38, y, x, y+44, 7, c);
+    function dot(ctx, x, y, r, c) { ctx.fillStyle = c; ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fill(); }
+    function pixelStar(ctx, x, y, c) {
+      ctx.fillStyle = c;
+      ctx.fillRect(x + 4, y, 5, 13);
+      ctx.fillRect(x, y + 4, 13, 5);
     }
-    function chevron(ctx, cx, cy, dir, c) {
-      line(ctx, cx-dir*13, cy-18, cx+dir*13, cy, 7, c);
-      line(ctx, cx+dir*13, cy, cx-dir*13, cy+18, 7, c);
-    }
-    function codexFace(ctx, state, t) {
-      const s = visualState(state), f = t.face, cut = t.bg;
-      const lx = 54, rx = 148, y = 92;
+
+    // ── EYES (animatable): blink 0..1 closes, breathY shifts, pupil offset ──
+    // Codex eyes: square blocks with square pupils (pixel/terminal feel)
+    function codexEyes(ctx, state, t, a) {
+      const f = t.face, cut = theme('codex', state).bg;
+      const lx = 54, rx = 148, baseY = 92 + a.breathY;
+      const s = state;
       if (s === 'sleeping') {
-        line(ctx, lx, y+28, lx+42, y+28, 7, f); line(ctx, rx, y+28, rx+42, y+28, 7, f);
-        ctx.fillStyle = f; ctx.font = '24px ui-monospace, monospace'; ctx.fillText('z', 174, 92); ctx.fillText('Z', 194, 74); return;
-      }
-      if (s === 'thinking') {
-        rr(ctx, lx, y, 40, 64, 4, f); rr(ctx, rx, y, 40, 64, 4, f);
-        ctx.fillStyle = cut; ctx.fillRect(lx+20, y+14, 12, 12); ctx.fillRect(rx+20, y+14, 12, 12);
-        ctx.fillStyle = f; ctx.fillRect(112, 166, 28, 6); return;
-      }
-      if (s === 'multi') {
-        rr(ctx, lx, y, 40, 62, 4, f); rr(ctx, rx, y, 40, 62, 4, f);
-        ctx.fillStyle = cut; ctx.fillRect(lx+14, y+10, 12, 12); ctx.fillRect(rx+14, y+10, 12, 12);
-        ctx.fillStyle = f; ctx.fillRect(108, 166, 24, 5); return;
-      }
-      if (s === 'reading') {
-        rr(ctx, lx-2, y+18, 48, 20, 4, f); rr(ctx, rx-2, y+18, 48, 20, 4, f);
-        ctx.fillStyle = cut; ctx.fillRect(lx+6, y+24, 30, 6); ctx.fillRect(rx+6, y+24, 30, 6);
-        line(ctx, 82, 152, 160, 152, 3, f); return;
-      }
-      if (s === 'writing') { line(ctx,lx-2,y+18,lx+44,y+34,10,f); line(ctx,rx-2,y+34,rx+44,y+18,10,f); line(ctx,88,164,152,152,5,f); return; }
-      if (s === 'shell') {
-        rr(ctx,lx-2,y+4,52,54,4,f); rr(ctx,rx-2,y+4,52,54,4,f);
-        ctx.fillStyle=cut; ctx.fillRect(lx+10,y+18,10,7); ctx.fillRect(lx+22,y+27,18,6); ctx.fillRect(rx+11,y+17,24,7); ctx.fillRect(rx+36,y+17,6,26); return;
-      }
-      if (s === 'permission') { rr(ctx,lx-4,y+2,52,60,6,null,f); rr(ctx,rx-4,y+2,52,60,6,null,f); ctx.fillStyle=f; ctx.fillRect(lx+26,y+18,8,18); ctx.fillRect(rx+10,y+18,8,18); ctx.beginPath(); ctx.arc(120,166,5,0,7); ctx.fill(); return; }
-      if (s === 'usage_low') { rr(ctx,lx-2,y+28,48,12,4,f); rr(ctx,rx-2,y+28,48,12,4,f); line(ctx,102,164,138,164,4,f); return; }
-      if (s === 'blocked') { line(ctx,lx,y+26,lx+46,y+20,10,f); line(ctx,rx,y+20,rx+46,y+26,10,f); rr(ctx,86,160,68,8,3,f); return; }
-      if (s === 'error' || s === 'usage_critical') { xEye(ctx,lx+2,y+8,f); xEye(ctx,rx+2,y+8,f); rr(ctx,104,162,34,7,2,f); return; }
-      if (s === 'success') {
-        line(ctx,lx+2,y+32,lx+20,y+18,8,f); line(ctx,lx+20,y+18,lx+42,y+32,8,f);
-        line(ctx,rx+2,y+32,rx+20,y+18,8,f); line(ctx,rx+20,y+18,rx+42,y+32,8,f);
-        line(ctx,106,164,118,176,6,f); line(ctx,118,176,140,150,6,f);
+        line(ctx, lx, baseY + 28, lx + 40, baseY + 28, 6, f);
+        line(ctx, rx, baseY + 28, rx + 40, baseY + 28, 6, f);
         return;
       }
-      if (s === 'compact') { rr(ctx,lx-6,y+28,54,12,4,f); rr(ctx,rx-6,y+28,54,12,4,f); line(ctx,100,164,114,164,4,f); line(ctx,140,164,126,164,4,f); return; }
+      if (s === 'error') {
+        xEye(ctx, lx + 2, baseY + 8, f); xEye(ctx, rx + 2, baseY + 8, f);
+        return;
+      }
+      if (s === 'usage_critical') { // weary low-power eyes: squashed lids, sunken pupils
+        const y = baseY + 26;
+        rr(ctx, lx, y, 40, 14, 4, f);
+        rr(ctx, rx, y, 40, 14, 4, f);
+        ctx.fillStyle = cut; ctx.fillRect(lx + 16, y + 6, 8, 5); ctx.fillRect(rx + 16, y + 6, 8, 5);
+        return;
+      }
+      // generic square eye with blink + pupil
+      const fullH = 60, w = 40;
+      const h = Math.max(4, fullH * (1 - a.blink));
+      const yTop = baseY + (fullH - h) / 2;
+      rr(ctx, lx, yTop, w, h, 6, f);
+      rr(ctx, rx, yTop, w, h, 6, f);
+      if (a.blink < 0.6 && s !== 'blocked') {
+        // square pupil / cut hole, moves with pupil offset
+        const px = 14 + a.pupilDX, py = 18 + a.pupilDY * (h / fullH);
+        const pw = 12, ph = Math.max(3, 12 * (h / fullH));
+        ctx.fillStyle = cut;
+        ctx.fillRect(lx + px, yTop + py, pw, ph);
+        ctx.fillRect(rx + px, yTop + py, pw, ph);
+      }
     }
-    function claudeFace(ctx, state, t) {
-      const s = visualState(state), f = t.face, lx = 70, rx = 150, y = 100;
-      if (s === 'sleeping') { arc(ctx,lx+18,y+24,18,205,335,7,f); arc(ctx,rx+18,y+24,18,205,335,7,f); ctx.fillStyle='#ffd2a0'; ctx.font='24px ui-monospace, monospace'; ctx.fillText('z',176,92); ctx.fillText('Z',196,74); return; }
-      if (s === 'thinking') { rr(ctx,lx,y,34,52,12,f); rr(ctx,rx,y,34,52,12,f); ctx.fillStyle=t.bg; ctx.beginPath(); ctx.arc(lx+23,y+14,6,0,7); ctx.arc(rx+23,y+14,6,0,7); ctx.fill(); arc(ctx,120,166,12,205,335,4,f); return; }
-      if (s === 'multi') { rr(ctx,lx,y,34,52,12,f); rr(ctx,rx,y,34,52,12,f); ctx.fillStyle=t.bg; ctx.beginPath(); ctx.arc(lx+17,y+12,6,0,7); ctx.arc(rx+17,y+12,6,0,7); ctx.fill(); rr(ctx,108,166,24,5,2,f); return; }
-      if (s === 'reading') { arc(ctx,lx+17,y+28,20,195,345,7,f); arc(ctx,rx+17,y+28,20,195,345,7,f); rr(ctx,88,154,64,10,4,f); return; }
-      if (s === 'writing') { arc(ctx,lx+17,y+28,20,210,335,7,f); arc(ctx,rx+17,y+22,20,200,325,7,f); line(ctx,96,164,144,158,4,f); return; }
-      if (s === 'shell') { rr(ctx,lx-4,y+2,44,46,8,null,f); rr(ctx,rx-4,y+2,44,46,8,null,f); line(ctx,lx+8,y+18,lx+17,y+24,4,f); line(ctx,lx+17,y+24,lx+8,y+30,4,f); line(ctx,rx+8,y+28,rx+26,y+28,4,f); return; }
-      if (s === 'permission') {
-        ctx.strokeStyle=f; ctx.lineWidth=4;
-        ctx.beginPath(); ctx.arc(lx+17,y+26,22,0,7); ctx.stroke();
-        ctx.beginPath(); ctx.arc(rx+17,y+26,22,0,7); ctx.stroke();
-        ctx.fillStyle=f;
-        for (const [px, py, r] of [[lx+23,y+20,6],[rx+11,y+20,6],[120,166,4]]) {
-          ctx.beginPath(); ctx.arc(px,py,r,0,7); ctx.fill();
+    // Claude eyes: rounded blocks with round pupils (organic feel)
+    function claudeEyes(ctx, state, t, a) {
+      const f = t.face, cut = theme('claude', state).bg;
+      const lx = 70, rx = 150, baseY = 100 + a.breathY;
+      const s = state;
+      if (s === 'sleeping') {
+        arc(ctx, lx + 17, baseY + 24, 18, 200, 340, 6, f);
+        arc(ctx, rx + 17, baseY + 24, 18, 200, 340, 6, f);
+        return;
+      }
+      if (s === 'error') {
+        xEye(ctx, lx - 1, baseY + 2, f); xEye(ctx, rx - 1, baseY + 2, f);
+        return;
+      }
+      if (s === 'usage_critical') { // weary low-power eyes: half-lidded, sunken small pupils
+        const y = baseY + 22;
+        rr(ctx, lx, y, 34, 13, 6, f);
+        rr(ctx, rx, y, 34, 13, 6, f);
+        dot(ctx, lx + 17, y + 8, 3, cut); dot(ctx, rx + 17, y + 8, 3, cut);
+        return;
+      }
+      if (s === 'blocked') { // flat half-lidded eyes : listless / stuck
+        rr(ctx, lx, baseY + 28, 34, 12, 5, f);
+        rr(ctx, rx, baseY + 28, 34, 12, 5, f);
+        return;
+      }
+      if (s === 'success') { // happy upward arcs
+        arc(ctx, lx + 17, baseY + 24, 20, 205, 335, 8, f);
+        arc(ctx, rx + 17, baseY + 24, 20, 205, 335, 8, f);
+        return;
+      }
+      const fullH = 50, w = 34;
+      const h = Math.max(4, fullH * (1 - a.blink));
+      const yTop = baseY + (fullH - h) / 2;
+      // Claude is expressive: head-tilt while thinking/reading (Codex stays aligned)
+      const tilt = (s === 'thinking') ? 7 : (s === 'reading' ? 4 : 0);
+      rr(ctx, lx, yTop, w, h, Math.min(14, h / 2), f);
+      rr(ctx, rx, yTop + tilt, w, h, Math.min(14, h / 2), f);
+      if (a.blink < 0.6) {
+        const px = 17 + a.pupilDX, py = 13 + a.pupilDY * (h / fullH);
+        const pr = Math.max(2, 6 * (h / fullH));
+        dot(ctx, lx + px, yTop + py, pr, cut);
+        dot(ctx, rx + px, yTop + tilt + py, pr, cut);
+      }
+    }
+    function xEye(ctx, x, y, c) {
+      line(ctx, x, y, x + 38, y + 44, 6, c);
+      line(ctx, x + 38, y, x, y + 44, 6, c);
+    }
+    // Codex-only: a faint CRT scanline sweeping the face region — mechanical, never warm.
+    function codexScanline(ctx, faceState, now) {
+      if (['error', 'usage_critical', 'sleeping'].includes(faceState)) return;
+      const y = 60 + ((now / 26) % 160);
+      // fade the band where it overlaps the eyes so it never hides them
+      const overEyes = y > 88 && y < 158;
+      ctx.fillStyle = overEyes ? 'rgba(80,220,130,0.05)' : 'rgba(80,220,130,0.11)';
+      ctx.fillRect(38, y, 164, 2);
+    }
+    // Claude-only: warm cheeks. Codex never gets these — this is the core personality split.
+    function claudeBlush(ctx, faceState, breathY) {
+      if (['error', 'usage_critical', 'blocked'].includes(faceState)) return;
+      const y = 152 + breathY;
+      const bright = faceState === 'success';        // beams brighter when happy
+      ctx.fillStyle = bright ? 'rgba(214,84,58,0.55)' : 'rgba(198,72,50,0.35)';
+      ctx.beginPath(); ctx.arc(72, y, bright ? 13 : 11, 0, 7); ctx.fill();
+      ctx.beginPath(); ctx.arc(168, y, bright ? 13 : 11, 0, 7); ctx.fill();
+    }
+
+    // ── MOUTHS (static per state) — eyes = emotion class, mouth = action ──
+    function codexMouth(ctx, state, t) {
+      const f = t.face, cx = 120, my = 172;
+      switch (state) {
+        case 'thinking': dot(ctx, cx, my, 5, f); break;                       // small o : pondering
+        case 'reading':  rr(ctx, cx - 16, my - 3, 32, 6, 2, f); break;         // slightly parted line
+        case 'writing':  line(ctx, cx - 14, my - 4, cx, my + 4, 5, f); line(ctx, cx, my + 4, cx + 14, my - 4, 5, f); break; // focused V-down
+        case 'shell':    rr(ctx, cx - 6, my - 3, 20, 6, 1, f); break;          // terse prompt bar
+        case 'permission': ctx.strokeStyle = f; ctx.lineWidth = 5; ctx.beginPath(); ctx.arc(cx, my, 9, 0, 7); ctx.stroke(); break; // open O : waiting
+        case 'compact':  rr(ctx, cx - 20, my - 2, 40, 4, 2, f); break;         // pressed flat line
+        case 'success':  line(ctx, cx - 16, my - 4, cx - 2, my + 8, 6, f); line(ctx, cx - 2, my + 8, cx + 20, my - 16, 6, f); break; // grin check
+        case 'blocked':  line(ctx, cx - 16, my + 2, cx + 16, my - 2, 6, f); break; // wry slope
+        case 'error':    line(ctx, cx - 12, my - 2, cx, my + 6, 5, f); line(ctx, cx, my + 6, cx + 12, my - 2, 5, f); break; // down V : crashed
+        case 'usage_critical': rr(ctx, cx - 8, my - 2, 7, 4, 1, f); rr(ctx, cx + 3, my - 2, 7, 4, 1, f); break; // broken weak line
+        case 'usage_low': rr(ctx, cx - 14, my - 2, 28, 5, 2, f); break;
+        default:         rr(ctx, cx - 12, my - 2, 24, 5, 2, f);
+      }
+    }
+    function claudeMouth(ctx, state, t) {
+      const f = t.face, cx = 120, my = 168;
+      switch (state) {
+        case 'thinking': arc(ctx, cx, my - 6, 10, 205, 335, 4, f); break;      // soft pensive wave
+        case 'reading':  rr(ctx, cx - 15, my - 3, 30, 6, 3, f); break;
+        case 'writing':  arc(ctx, cx, my + 4, 12, 200, 340, 4, f); break;      // gentle down-focus
+        case 'shell':    rr(ctx, cx - 5, my - 3, 18, 6, 2, f); break;
+        case 'permission': ctx.strokeStyle = f; ctx.lineWidth = 5; ctx.beginPath(); ctx.arc(cx, my, 9, 0, 7); ctx.stroke(); break;
+        case 'compact':  rr(ctx, cx - 18, my - 2, 36, 4, 2, f); break;
+        case 'success':  arc(ctx, cx, my - 8, 20, 25, 155, 5, f); break;       // big warm smile
+        case 'blocked':  arc(ctx, cx, my + 12, 14, 200, 340, 4, f); break;     // small frown
+        case 'error':    arc(ctx, cx, my + 12, 14, 200, 340, 5, f); break;     // frown : crashed
+        case 'usage_critical': arc(ctx, cx, my + 8, 10, 200, 340, 3, f); break; // faint weak frown
+        case 'usage_low': rr(ctx, cx - 13, my - 2, 26, 5, 2, f); break;
+        default:         arc(ctx, cx, my - 2, 12, 205, 335, 4, f);
+      }
+    }
+
+    // ── PROPS (simplified, single motif, sits close under the face) ──
+    function statusProp(ctx, state, t, agent, a) {
+      const c = accent(state, t), f = t.face, bg = t.bg;
+      if (state === 'thinking') {
+        // small thinking bubble above head, dots animate
+        const bubble = agent === 'codex' ? '#d2ffe2' : '#ffe3d3';
+        rr(ctx, 150, 24, 40, 26, 8, bubble);
+        dot(ctx, 145, 54, 4, bubble); dot(ctx, 137, 64, 3, bubble);
+        const lit = a.propPhase % 3;
+        for (let i = 0; i < 3; i++) { ctx.fillStyle = i === lit ? t.face : (agent === 'codex' ? '#7fcf9c' : '#c98d76'); ctx.beginPath(); ctx.arc(160 + i * 10, 37, 3, 0, 7); ctx.fill(); }
+      } else if (state === 'shell') {
+        // terminal strip directly under the face, blinking cursor
+        rr(ctx, 78, 196, 84, 30, 4, agent === 'codex' ? '#0c1410' : '#3a241c');
+        line(ctx, 88, 205, 96, 211, 3, colors.green); line(ctx, 96, 211, 88, 217, 3, colors.green);
+        rr(ctx, 104, 208, 22, 4, 1, colors.blue);
+        if (a.cursorOn) ctx.fillStyle = colors.green, ctx.fillRect(150, 204, 6, 12);
+      } else if (state === 'writing') {
+        // code lines emerging under the face
+        rr(ctx, 74, 198, 40, 5, 2, colors.green);
+        rr(ctx, 74, 208, Math.round(60 * a.writeGrow), 5, 2, colors.blue);
+        rr(ctx, 74, 218, 30, 5, 2, c);
+      } else if (state === 'reading') {
+        // open book under the face
+        openBook(ctx, 81, 196, c, agent === 'codex' ? '#d6f4e0' : '#ffe0d0', f);
+      } else if (state === 'permission') {
+        // question card under face; blink handled by drawFace via flash
+        if (a.permFlash) {
+          rr(ctx, 100, 196, 40, 30, 6, c);
+          ctx.fillStyle = bg; ctx.font = 'bold 22px ui-monospace, monospace'; ctx.textAlign = 'center';
+          ctx.fillText('?', 120, 219); ctx.textAlign = 'start';
         }
-        return;
+      } else if (state === 'blocked') {
+        // barrier under face
+        const stripe = agent === 'codex' ? colors.yellow : '#ffd9c4';
+        rr(ctx, 72, 200, 96, 16, 3, f);
+        ctx.fillStyle = stripe;
+        for (let i = 0; i < 4; i++) { const x = 78 + i * 23; ctx.beginPath(); ctx.moveTo(x, 201); ctx.lineTo(x + 11, 201); ctx.lineTo(x, 215); ctx.fill(); }
+      } else if (state === 'error') {
+        // cracked terminal card : a crash / broken output
+        const box = agent === 'codex' ? '#190708' : '#fff1e9';
+        rr(ctx, 76, 196, 88, 30, agent === 'codex' ? 3 : 8, box, colors.red);
+        // prompt marker
+        line(ctx, 86, 204, 93, 210, 3, colors.red); line(ctx, 93, 210, 86, 216, 3, colors.red);
+        // jagged crack down the middle (flickers)
+        if (a.crashOn) {
+          line(ctx, 118, 199, 112, 208, 3, colors.red); line(ctx, 112, 208, 124, 216, 3, colors.red); line(ctx, 124, 216, 118, 224, 3, colors.red);
+        }
+        // small X on the right
+        line(ctx, 142, 204, 154, 216, 3, colors.red); line(ctx, 154, 204, 142, 216, 3, colors.red);
+      } else if (state === 'usage_critical') {
+        // near-empty red battery (pairs with usage_low's yellow half battery) + red pulse frame
+        tinyBattery(ctx, 99, 198, colors.red, colors.red, true);
+        if (a.critFlash) { ctx.fillStyle = colors.red; ctx.fillRect(104, 204, 7, 14); } // last bar blinks
+        // pulsing red alert border around the whole screen
+        const pulse = 0.35 + 0.35 * Math.sin(a.tSec * 5);
+        ctx.strokeStyle = `rgba(230,70,64,${pulse})`; ctx.lineWidth = 4;
+        ctx.strokeRect(3, 3, W - 6, W - 6);
+      } else if (state === 'success') {
+        // stars twinkle
+        if (a.propPhase % 2 === 0) pixelStar(ctx, 44, 60, colors.yellow);
+        if (a.propPhase % 2 === 1) pixelStar(ctx, 184, 52, colors.yellow);
+        pixelStar(ctx, 196, 82, colors.yellow);
+      } else if (state === 'compact') {
+        // arrows converging under face
+        line(ctx, 92, 210, 112, 210, 5, c); line(ctx, 148, 210, 128, 210, 5, c);
+        ctx.fillStyle = c; ctx.beginPath(); ctx.moveTo(112, 202); ctx.lineTo(112, 218); ctx.lineTo(122, 210); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(128, 202); ctx.lineTo(128, 218); ctx.lineTo(118, 210); ctx.fill();
+      } else if (state === 'usage_low') {
+        tinyBattery(ctx, 100, 198, colors.yellow, colors.red, false);
       }
-      if (s === 'usage_low') { arc(ctx,lx+17,y+25,19,195,345,9,f); arc(ctx,rx+17,y+25,19,195,345,9,f); rr(ctx,104,164,32,5,2,f); return; }
-      if (s === 'blocked') { arc(ctx,lx+17,y+20,20,205,335,9,f); arc(ctx,rx+17,y+20,20,205,335,9,f); rr(ctx,92,160,56,7,3,f); return; }
-      if (s === 'error' || s === 'usage_critical') { xEye(ctx,lx-1,y+2,f); xEye(ctx,rx-1,y+2,f); return; }
-      if (s === 'success') { arc(ctx,lx+17,y+24,20,205,335,9,f); arc(ctx,rx+17,y+24,20,205,335,9,f); arc(ctx,120,158,20,25,155,4,f); return; }
-      if (s === 'compact') { rr(ctx,lx-8,y+26,48,10,4,f); rr(ctx,rx-8,y+26,48,10,4,f); return; }
     }
-    function icon(ctx, state, t) {
-      if (['sleeping','multi','subagent'].includes(state)) return;
-      const c = accent(state, t);
-      let b = t.badge;
-      if (state === 'error' || state === 'blocked') b = '#480c0c';
-      if (state === 'permission' || state === 'compact') b = '#483608';
-      if (state === 'success') b = '#063418';
-      rr(ctx,12,12,50,50,8,b,c);
-      const x=19,y=19;
-      if (state === 'thinking') { ctx.strokeStyle=c; ctx.lineWidth=3; ctx.beginPath(); ctx.arc(x+18,y+14,12,0,7); ctx.stroke(); ctx.fillStyle=c; ctx.fillRect(x+12,y+27,13,6); line(ctx,x+13,y+37,x+24,y+37,2,c); line(ctx,x+18,y-2,x+18,y+5,2,c); }
-      if (state === 'reading') { rr(ctx,x,y+8,36,27,4,null,c); line(ctx,x+18,y+9,x+18,y+35,2,c); line(ctx,x+1,y+14,x+16,y+18,2,c); line(ctx,x+35,y+14,x+20,y+18,2,c); }
-      if (state === 'writing') { line(ctx,x+4,y+34,x+32,y+6,6,c); ctx.fillStyle=c; ctx.beginPath(); ctx.moveTo(x+32,y+6); ctx.lineTo(x+38,y+14); ctx.lineTo(x+25,y+12); ctx.fill(); }
-      if (state === 'shell') { rr(ctx,x,y+9,38,29,5,null,c); line(ctx,x+7,y+18,x+14,y+24,4,c); line(ctx,x+14,y+24,x+7,y+30,4,c); line(ctx,x+21,y+30,x+34,y+30,4,c); }
-      if (state === 'permission') { rr(ctx,x+6,y+21,27,20,4,null,c); ctx.beginPath(); ctx.arc(x+19,y+21,10,Math.PI,0); ctx.stroke(); ctx.fillStyle=c; ctx.beginPath(); ctx.arc(x+19,y+31,3,0,7); ctx.fill(); }
-      if (state === 'blocked') { ctx.strokeStyle=c; ctx.lineWidth=3; ctx.beginPath(); ctx.arc(x+19,y+21,18,0,7); ctx.stroke(); line(ctx,x+7,y+34,x+31,y+10,6,c); }
-      if (state === 'error') { ctx.strokeStyle=c; ctx.lineWidth=3; ctx.beginPath(); ctx.moveTo(x+19,y+4); ctx.lineTo(x+1,y+39); ctx.lineTo(x+37,y+39); ctx.closePath(); ctx.stroke(); ctx.fillStyle=c; ctx.fillRect(x+17,y+16,5,14); ctx.beginPath(); ctx.arc(x+19,y+34,3,0,7); ctx.fill(); }
-      if (state === 'success') { line(ctx,x+4,y+24,x+15,y+35,6,c); line(ctx,x+15,y+35,x+37,y+9,6,c); }
-      if (state === 'compact') { line(ctx,x+3,y+22,x+17,y+22,5,c); line(ctx,x+3,y+22,x+10,y+15,5,c); line(ctx,x+3,y+22,x+10,y+29,5,c); line(ctx,x+36,y+22,x+22,y+22,5,c); line(ctx,x+36,y+22,x+29,y+15,5,c); line(ctx,x+36,y+22,x+29,y+29,5,c); }
+    function openBook(ctx, x, y, cover, page, ink) {
+      rr(ctx, x, y, 78, 30, 5, cover);
+      rr(ctx, x + 4, y + 4, 32, 22, 3, page);
+      rr(ctx, x + 42, y + 4, 32, 22, 3, page);
+      ctx.fillStyle = ink; ctx.fillRect(x + 38, y + 3, 2, 25);
+      ctx.fillRect(x + 10, y + 11, 20, 2); ctx.fillRect(x + 10, y + 18, 16, 2);
+      ctx.fillRect(x + 48, y + 11, 18, 2); ctx.fillRect(x + 48, y + 18, 22, 2);
     }
-    function corner(ctx, state, active, t) {
-      if (state !== 'multi' && state !== 'subagent' && active < 2) return;
-      const bg = t.multi, c = t.face;
-      rr(ctx,174,12,54,28,7,bg,c);
-      if (state === 'subagent') {
-        ctx.strokeStyle=c; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(188,26,5,0,7); ctx.arc(206,26,5,0,7); ctx.stroke(); line(ctx,193,26,201,26,2,c);
-      } else {
-        ctx.fillStyle=c; for (let i=0;i<3;i++){ ctx.beginPath(); ctx.arc(188+i*10,26,3,0,7); ctx.fill(); }
+    function tinyBattery(ctx, x, y, frame, fill, critical) {
+      rr(ctx, x, y, 42, 22, 4, null, frame);
+      ctx.fillStyle = frame; ctx.fillRect(x + 42, y + 7, 5, 8);
+      ctx.fillStyle = fill; ctx.fillRect(x + 5, y + 5, critical ? 8 : 30, 12);
+    }
+
+    // ── subagent: a task-fork tree under the face (root spawns two children) ──
+    // Drawn UNDER the face. A pulse travels root -> children = "dispatching work".
+    // Codex uses square process-blocks, Claude uses soft round task-bubbles.
+    function drawSubagent(ctx, t, agent, a) {
+      const c = t.face, sq = agent === 'codex';
+      const dim = agent === 'codex' ? '#2c7a4a' : '#8f3f2b';
+      const litLine = agent === 'codex' ? '#50dc82' : '#ffd9c4';
+      const phase = (a.tSec * 2.4) % 1;              // 0..1 pulse position
+      const lit = phase < 0.34 ? 0 : (phase < 0.67 ? 1 : 2);  // 0=root 1=left 2=right
+      // fork lines
+      line(ctx, 120, 188, 120, 205, 3, lit === 0 ? litLine : dim);
+      line(ctx, 120, 205, 90, 216, 3, lit === 1 ? litLine : dim);
+      line(ctx, 120, 205, 150, 216, 3, lit === 2 ? litLine : dim);
+      // nodes: root (top) + two children
+      const node = (x, y, active) => {
+        if (sq) {
+          rr(ctx, x - 12, y - 9, 24, 18, 3, t.multi, active ? litLine : c);
+          ctx.fillStyle = active ? litLine : c; ctx.fillRect(x - 4, y - 3, 8, 6);
+        } else {
+          dot(ctx, x, y, active ? 11 : 10, t.multi);
+          ctx.strokeStyle = active ? litLine : c; ctx.lineWidth = active ? 3 : 2;
+          ctx.beginPath(); ctx.arc(x, y, active ? 11 : 10, 0, 7); ctx.stroke();
+          dot(ctx, x, y, 3.5, active ? litLine : c);
+        }
+      };
+      node(120, 184, lit === 0);
+      node(90, 218, lit === 1);
+      node(150, 218, lit === 2);
+    }
+    // ── multi: parallel session lanes under the face, each with an async-moving token ──
+    // "several sessions advancing at once". Codex = square tokens stepping discretely on
+    // terminal lanes; Claude = round tokens gliding with a soft trail on chat lanes.
+    function drawMulti(ctx, t, agent, a) {
+      const face = t.face;
+      const ys = [198, 212, 226], x0 = 62, x1 = 178, span = x1 - x0;
+      const speeds = [0.42, 0.55, 0.36];
+      for (let i = 0; i < 3; i++) {
+        const y = ys[i];
+        if (agent === 'codex') {
+          // lane rail + prompt chevron + stepping square token
+          rr(ctx, x0, y - 3, span, 6, 1, '#102417');
+          line(ctx, 48, y - 5, 54, y, 2, face); line(ctx, 54, y, 48, y + 5, 2, face);
+          let p = (a.tSec * speeds[i] + i * 0.27) % 1;
+          p = Math.floor(p * 8) / 8;                       // discrete tick
+          const x = x0 + 6 + p * (span - 16);
+          ctx.fillStyle = face; ctx.fillRect(Math.round(x / 2) * 2, y - 5, 10, 10);
+        } else {
+          // soft lane + gliding round token with a faint trail
+          rr(ctx, x0, y - 3, span, 6, 3, 'rgba(255,217,196,0.35)');
+          const p = (a.tSec * speeds[i] + i * 0.31) % 1;
+          const x = x0 + 6 + p * (span - 12);
+          const yy = y + Math.sin(a.tSec * 2 + i) * 1.5;
+          dot(ctx, x - 8, yy, 3, 'rgba(36,24,20,0.35)');
+          dot(ctx, x, yy, 6, face);
+        }
       }
     }
-    function draw(canvas, agent, state) {
+
+    // ── per-state animation profile ──────────────────────────────
+    // breathMs: breathing period; blink: whether it blinks; pupil: drift mode
+    function profile(state) {
+      const p = { breathMs: 3500, blink: true, pupil: 'still' };
+      switch (state) {
+        case 'sleeping': p.breathMs = 5200; p.blink = false; break;
+        case 'thinking': p.breathMs = 3200; p.pupil = 'up'; break;
+        case 'reading':  p.breathMs = 3600; p.pupil = 'scan'; break;
+        case 'writing':  p.breathMs = 3000; p.pupil = 'down'; break;
+        case 'shell':    p.breathMs = 3200; p.pupil = 'left'; break;
+        case 'permission': p.breathMs = 2600; p.pupil = 'dart'; break;
+        case 'blocked':  p.breathMs = 6000; p.blink = false; break;
+        case 'error':    p.breathMs = 1000; p.blink = false; break;
+        case 'usage_critical': p.breathMs = 1200; p.blink = false; break;
+        case 'success':  p.breathMs = 2600; p.blink = false; break;
+        case 'compact':  p.breathMs = 2800; break;
+      }
+      return p;
+    }
+
+    // ── frame renderer ───────────────────────────────────────────
+    function drawFrame(canvas, agent, state, now, anim) {
       const ctx = canvas.getContext('2d');
+      const vs = visualState(state);
+      const faceState = baseFaceState(vs);   // subagent/multi ride on a calm base face
       const t = theme(agent, state);
-      ctx.clearRect(0,0,W,W);
-      ctx.fillStyle = t.bg; ctx.fillRect(0,0,W,W);
-      icon(ctx, state, t);
-      corner(ctx, state, state === 'multi' ? 3 : 1, t);
-      if (agent === 'claude') claudeFace(ctx, state, t); else codexFace(ctx, state, t);
-      statusProp(ctx, state, t, agent);
+      const p = profile(faceState);
+      anim.tSec = now / 1000;
+      anim.agent = agent;
+
+      // breathing triangle wave -> -2..2
+      const bp = (now % p.breathMs) / p.breathMs;      // 0..1
+      const tri = 1 - Math.abs(bp * 2 - 1);            // 0..1..0
+      anim.breathY = Math.round((tri - 0.5) * 4);      // -2..2
+
+      // irregular blink
+      if (p.blink) {
+        if (now - anim.lastBlink > anim.blinkGap) {
+          anim.blinkStart = now; anim.lastBlink = now;
+          anim.blinkGap = 1800 + Math.random() * 3200;
+          if (Math.random() < 0.15) anim.blinkGap = 220; // occasional double-blink
+        }
+        const bt = now - anim.blinkStart;
+        anim.blink = bt < 120 ? Math.sin((bt / 120) * Math.PI) : 0;
+      } else { anim.blink = 0; }
+
+      // pupil drift — Codex moves in discrete mechanical steps, Claude glides smoothly
+      const mech = anim.agent === 'codex';
+      const quant = (v, step) => Math.round(v / step) * step;
+      const drift = Math.sin(now / 700);
+      anim.pupilDX = 0; anim.pupilDY = 0;
+      if (p.pupil === 'up') anim.pupilDY = -4;
+      else if (p.pupil === 'down') anim.pupilDY = 4;
+      else if (p.pupil === 'left') { anim.pupilDX = -4; }
+      else if (p.pupil === 'scan') {
+        anim.pupilDX = mech ? quant(drift * 6, 6) : Math.round(drift * 6);  // Codex snaps L/R, Claude sweeps
+      } else if (p.pupil === 'dart') {
+        anim.pupilDX = mech ? quant(Math.sin(now / 260) * 5, 5) : Math.round(Math.sin(now / 260) * 5);
+      }
+
+      // prop sub-animations
+      anim.propPhase = Math.floor(now / 320) % 3;
+      anim.cursorOn = Math.floor(now / 500) % 2 === 0;
+      anim.writeGrow = 0.3 + 0.7 * ((now % 1400) / 1400);
+      anim.permFlash = Math.floor(now / 500) % 2 === 0;
+      anim.crashOn = Math.floor(now / 130) % 2 === 0;   // error crack glitch flicker
+      anim.critFlash = Math.floor(now / 550) % 2 === 0; // usage_critical battery bar blink
+
+      // entrance pop for success/error (first 500ms after (re)start)
+      let popScale = 1, shakeX = 0;
+      const age = now - anim.stateEnter;
+      if (vs === 'success' && age < 480) popScale = 1 + 0.12 * Math.sin((age / 480) * Math.PI);
+      if (vs === 'error' && age < 360) shakeX = Math.round(Math.sin(age / 40) * 4 * (1 - age / 360));  // error shakes, usage_critical pulses instead
+
+      // paint
+      ctx.clearRect(0, 0, W, W);
+      ctx.fillStyle = t.bg; ctx.fillRect(0, 0, W, W);
+
+      ctx.save();
+      ctx.translate(shakeX, 0);
+      if (popScale !== 1) { ctx.translate(120, 130); ctx.scale(popScale, popScale); ctx.translate(-120, -130); }
+
+      if (agent === 'codex') { codexEyes(ctx, faceState, t, anim); codexMouth(ctx, faceState, t); codexScanline(ctx, faceState, now); }
+      else { claudeEyes(ctx, faceState, t, anim); claudeBlush(ctx, faceState, anim.breathY); claudeMouth(ctx, faceState, t); }
+
+      if (vs === 'subagent') drawSubagent(ctx, t, agent, anim);
+      else if (vs === 'multi') drawMulti(ctx, t, agent, anim);
+      else statusProp(ctx, faceState, t, agent, anim);
+
+      // sleeping zZ float
+      if (vs === 'sleeping') {
+        const zf = (now % 2600) / 2600;
+        ctx.fillStyle = agent === 'codex' ? t.face : '#ffd9c4';
+        ctx.font = '22px ui-monospace, monospace';
+        ctx.fillText('z', 172, 92 - zf * 6);
+        ctx.font = '28px ui-monospace, monospace';
+        ctx.fillText('Z', 192, 72 - zf * 10);
+      }
+      ctx.restore();
     }
+
+    // ── build grid + animation loop ──────────────────────────────
     const grid = document.getElementById('grid');
+    const cells = [];
     for (const agent of agents) {
       for (const state of states) {
         const tile = document.createElement('article');
         tile.className = 'tile';
         tile.innerHTML = `<div class="label"><strong>${agent}</strong><span>${state}</span></div><canvas width="240" height="240"></canvas>`;
         grid.appendChild(tile);
-        draw(tile.querySelector('canvas'), agent, state);
+        const anim = {
+          breathY: 0, blink: 0, lastBlink: -9999, blinkStart: -9999,
+          blinkGap: 1800 + Math.random() * 3200,
+          pupilDX: 0, pupilDY: 0, propPhase: 0, cursorOn: true,
+          writeGrow: 0.5, permFlash: true, stateEnter: 0
+        };
+        cells.push({ canvas: tile.querySelector('canvas'), agent, state, anim });
       }
     }
+
+    let animOn = true;
+    let frozen = false;
+    let startTs = performance.now();
+    function tick(ts) {
+      const now = ts - startTs;
+      for (const c of cells) {
+        if (c.anim.stateEnter === 0) c.anim.stateEnter = now - Math.random() * 4000; // desync entrances
+        drawFrame(c.canvas, c.agent, c.state, frozen ? 900 : now, c.anim);
+      }
+      if (animOn && !frozen) requestAnimationFrame(tick);
+    }
+    requestAnimationFrame(tick);
+
+    document.getElementById('toggleAnim').onclick = (e) => {
+      animOn = !animOn; frozen = false;
+      e.target.textContent = animOn ? '动画: 开' : '动画: 关';
+      e.target.classList.toggle('on', animOn);
+      document.getElementById('toggleFreeze').classList.remove('on');
+      if (animOn) { startTs = performance.now(); requestAnimationFrame(tick); }
+    };
+    document.getElementById('toggleFreeze').onclick = (e) => {
+      frozen = true; animOn = false;
+      document.getElementById('toggleAnim').textContent = '动画: 关';
+      document.getElementById('toggleAnim').classList.remove('on');
+      e.target.classList.add('on');
+      requestAnimationFrame(tick);
+    };
   </script>
 </body>
 </html>
