@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>cc-mochi boot animation preview</title>
+  <style>
+    :root { --paper:#f7f4ea; --ink:#181716; --muted:#706b62; --line:#d8d1c3; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; background: var(--paper); color: var(--ink);
+      font: 14px/1.45 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+      min-height: 100vh; display: grid; place-items: center;
+    }
+    main { text-align: center; padding: 28px 16px 42px; }
+    h1 { margin: 0 0 6px; font-size: 22px; }
+    .note { color: var(--muted); max-width: 520px; margin: 0 auto 20px; }
+    .screen {
+      width: 360px; height: 360px; margin: 0 auto;
+      background: #000; border-radius: 14px;
+      box-shadow: 0 10px 30px rgba(0,0,0,.18); overflow: hidden;
+    }
+    canvas { display: block; width: 100%; height: 100%; image-rendering: pixelated; }
+    .controls { margin-top: 16px; display: flex; gap: 8px; justify-content: center; }
+    button {
+      border: 1px solid var(--line); background: #fffaf0; border-radius: 8px;
+      padding: 7px 14px; font: inherit; font-weight: 650; cursor: pointer; color: var(--ink);
+    }
+    button.on { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>cc-mochi boot animation</h1>
+    <div class="note">A pixel-faithful replay of the firmware boot sequence: the mochi sleeps, is woken up, sits down and starts typing, then <b>cc-mochi</b> prints on screen.</div>
+    <div class="screen"><canvas id="cv" width="240" height="240"></canvas></div>
+    <div class="controls">
+      <button id="play" class="on">▶ 循环播放</button>
+      <button id="replay">↻ 重播一次</button>
+    </div>
+  </main>
+
+  <script>
+    const cv = document.getElementById('cv');
+    const ctx = cv.getContext('2d');
+    const W = 240;
+
+    // ── palette (raw RGB straight from the firmware color565() calls) ──
+    const C = {
+      black:'#000000',
+      crab:'rgb(232,124,82)', crabHi:'rgb(255,158,106)', eye:'rgb(8,10,12)',
+      shadow:'rgb(18,18,18)', zCol:'rgb(148,178,188)',
+      term:'rgb(30,30,46)', termTop:'rgb(40,40,58)', termEdge:'rgb(18,18,28)',
+      red:'rgb(245,88,78)', yellow:'rgb(245,190,78)', green:'rgb(55,205,100)',
+      blue:'rgb(86,150,235)', gray:'rgb(112,118,138)', codeLine:'rgb(58,58,80)',
+      kb:'rgb(82,118,132)', kbDark:'rgb(42,64,72)', kbHi:'rgb(124,158,168)',
+      title:'rgb(232,124,82)'
+    };
+    const fill = (x,y,w,h,c) => { ctx.fillStyle = c; ctx.fillRect(x,y,w,h); };
+    const clear = () => fill(0,0,W,W,C.black);
+    const mn = (a,b) => Math.min(a,b);
+
+    // ── firmware boot draw functions, ported 1:1 ──
+    function bootTerminalBase(ty) {
+      fill(76,ty,88,72,C.termEdge);
+      fill(78,ty+2,84,68,C.term);
+      fill(78,ty+2,84,7,C.termTop);
+      fill(82,ty+4,3,3,C.red);
+      fill(88,ty+4,3,3,C.yellow);
+      fill(94,ty+4,3,3,C.green);
+      fill(101,ty+5,54,1,C.codeLine);
+    }
+    function bootTerminalCode(ty, frame) {
+      fill(84,ty+16,58,30,C.term);
+      const codeW = frame < 8 ? 6 + frame*4 : 38;
+      fill(86,ty+22,codeW,4,C.green);
+      if (frame >= 8) { fill(86,ty+30,24,3,C.blue); fill(114,ty+30,18,3,C.gray); }
+      if (frame >= 11) { fill(86,ty+38,12,3,C.yellow); fill(102,ty+38,34,3,C.green); }
+    }
+    function bootMochiBody(y, openEyes) {
+      const x = 51;
+      fill(x+30,y-7,78,38,C.crab);
+      fill(x+30,y-9,78,4,C.crabHi);
+      fill(x+18,y+13,16,13,C.crab);
+      fill(x+12,y+10,14,8,C.crab);
+      fill(x+106,y+13,16,13,C.crab);
+      fill(x+114,y+10,14,8,C.crab);
+      if (openEyes) { fill(x+47,y+15,8,8,C.eye); fill(x+88,y+15,8,8,C.eye); }
+      else { fill(x+47,y+18,8,3,C.eye); fill(x+88,y+18,8,3,C.eye); }
+    }
+    function bootKeyboard(ky, frame, allDim) {
+      fill(68,ky,104,22,C.kbDark);
+      fill(68,ky+2,104,16,C.kb);
+      for (let row=0; row<3; row++)
+        for (let col=0; col<11; col++) {
+          const kx = 72 + col*9 + (row===1?3:0);
+          const yy = ky + 4 + row*5;
+          const c = (!allDim && (frame+row+col)%7===0) ? C.green : C.kbHi;
+          fill(kx,yy,6,3,c);
+        }
+    }
+
+    // frame renderers
+    function sleepFrame(frame) {
+      clear();
+      const y = 136 + (frame===1?1:0);
+      fill(57,y+42,126,5,C.shadow);
+      fill(70,y+8,100,34,C.crab);
+      fill(78,y+4,84,6,C.crabHi);
+      fill(62,y+24,16,12,C.crab);
+      fill(162,y+24,16,12,C.crab);
+      for (let i=0;i<6;i++) fill(78+i*15, y+38, 8,13, C.crab);
+      fill(92,y+25,28,4,C.eye);
+      fill(132,y+25,28,4,C.eye);
+      if (frame < 5) {
+        const zy = 92 - frame*5;
+        fill(123,zy,16,4,C.zCol);
+        fill(135,zy+4,4,4,C.zCol);
+        fill(131,zy+8,4,4,C.zCol);
+        fill(123,zy+12,16,4,C.zCol);
+      }
+    }
+    function wakeFrame(frame) {
+      clear();
+      const termY = 44 - mn(frame,4)*2;
+      fill(76,termY,88,72,C.termEdge);
+      fill(78,termY+2,84,68,C.term);
+      fill(78,termY+2,84,7,C.termTop);
+      fill(82,termY+4,3,3,C.red);
+      fill(88,termY+4,3,3,C.yellow);
+      fill(94,termY+4,3,3,C.green);
+      fill(101,termY+5,54,1,C.codeLine);
+      if (frame>4) fill(86,termY+22, mn(38,(frame-4)*7), 4, C.green);
+      if (frame>5) fill(86,termY+30, mn(28,(frame-5)*7), 3, C.blue);
+      if (frame>6) { fill(118,termY+30,16,3,C.gray); fill(86,termY+38,12,3,C.yellow); }
+      const baseY = 184 - mn(frame,6)*8;
+      const x = 51;
+      fill(x+30,baseY-7,78,38,C.crab);
+      fill(x+30,baseY-9,78,4,C.crabHi);
+      fill(x+18,baseY+13,16,13,C.crab);
+      fill(x+12,baseY+10,14,8,C.crab);
+      fill(x+106,baseY+13,16,13,C.crab);
+      fill(x+114,baseY+10,14,8,C.crab);
+      if (frame<3) { fill(x+47,baseY+18,8,3,C.eye); fill(x+88,baseY+18,8,3,C.eye); }
+      else { fill(x+47,baseY+15,8,8,C.eye); fill(x+88,baseY+15,8,8,C.eye); }
+      const ky = 204 - mn(frame,7)*6;
+      bootKeyboard(ky, frame, true);
+    }
+    function typingFrame(frame) {
+      clear();
+      const ty = 44 + (frame<5 ? (5-frame)*4 : 0);
+      bootTerminalBase(ty);
+      bootTerminalCode(ty, frame);
+      const bob = (frame%4===1 || frame%4===2) ? -2 : 0;
+      bootMochiBody(138+bob, true);
+      bootKeyboard(164, frame, false);
+    }
+    function titleFrame() {
+      typingFrame(17);
+      // Adafruit GFX size-2 default font, cursor top-left at (70,204)
+      ctx.fillStyle = C.title;
+      ctx.textBaseline = 'top';
+      ctx.font = '700 17px ui-monospace, "SF Mono", Menlo, monospace';
+      ctx.fillText('cc-mochi', 70, 204);
+    }
+
+    // ── timeline (kind, frame index, duration ms) — matches animLogoReveal() ──
+    const TL = [];
+    for (let i=0;i<6;i++) TL.push({fn:()=>sleepFrame(i), dur:150});
+    for (let i=0;i<8;i++) TL.push({fn:()=>wakeFrame(i), dur:115});
+    for (let i=8;i<18;i++) TL.push({fn:()=>typingFrame(i), dur:110});
+    TL.push({fn:titleFrame, dur:900});
+
+    // expose for headless capture
+    window.__bootTL = TL;
+    window.renderBootFrame = (i) => TL[i].fn();
+
+    // ── interactive playback ──
+    let timer = null, loop = true;
+    function playFrom(i) {
+      if (i >= TL.length) { if (loop) return playFrom(0); return; }
+      TL[i].fn();
+      timer = setTimeout(() => playFrom(i+1), TL[i].dur);
+    }
+    function restart() { clearTimeout(timer); playFrom(0); }
+
+    document.getElementById('play').onclick = (e) => {
+      loop = !loop; e.target.classList.toggle('on', loop);
+      e.target.textContent = loop ? '▶ 循环播放' : '⏸ 单次';
+      if (loop) restart();
+    };
+    document.getElementById('replay').onclick = () => { const wasLoop = loop; loop = false; restart(); loop = wasLoop; };
+    restart();
+  </script>
+</body>
+</html>
