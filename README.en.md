@@ -81,21 +81,29 @@ These come straight from the firmware's expression renderer. **For the same stat
 
 **Claude style** (warm orange, dark round eyes, blinks and blushes, arc mouths)
 
-| thinking | reading | writing | shell |
+| sleeping | thinking | reading | writing |
 | :---: | :---: | :---: | :---: |
-| ![claude thinking](pics/expressions/claude_thinking.png) | ![claude reading](pics/expressions/claude_reading.png) | ![claude writing](pics/expressions/claude_writing.png) | ![claude shell](pics/expressions/claude_shell.png) |
-| **permission** | **success** | **error** | **multi** |
-| ![claude permission](pics/expressions/claude_permission.png) | ![claude success](pics/expressions/claude_success.png) | ![claude error](pics/expressions/claude_error.png) | ![claude multi](pics/expressions/claude_multi.png) |
+| ![claude sleeping](pics/expressions/claude_sleeping.png) | ![claude thinking](pics/expressions/claude_thinking.png) | ![claude reading](pics/expressions/claude_reading.png) | ![claude writing](pics/expressions/claude_writing.png) |
+| **shell** | **permission** | **blocked** | **error** |
+| ![claude shell](pics/expressions/claude_shell.png) | ![claude permission](pics/expressions/claude_permission.png) | ![claude blocked](pics/expressions/claude_blocked.png) | ![claude error](pics/expressions/claude_error.png) |
+| **success** | **compact** | **subagent** | **multi** |
+| ![claude success](pics/expressions/claude_success.png) | ![claude compact](pics/expressions/claude_compact.png) | ![claude subagent](pics/expressions/claude_subagent.png) | ![claude multi](pics/expressions/claude_multi.png) |
+| **usage_low** | **usage_critical** | | |
+| ![claude usage_low](pics/expressions/claude_usage_low.png) | ![claude usage_critical](pics/expressions/claude_usage_critical.png) | | |
 
 **Codex style** (pure black, neon-green pixel-block eyes, X dead-eyes, scanlines)
 
-| thinking | reading | writing | shell |
+| sleeping | thinking | reading | writing |
 | :---: | :---: | :---: | :---: |
-| ![codex thinking](pics/expressions/codex_thinking.png) | ![codex reading](pics/expressions/codex_reading.png) | ![codex writing](pics/expressions/codex_writing.png) | ![codex shell](pics/expressions/codex_shell.png) |
-| **permission** | **success** | **error** | **multi** |
-| ![codex permission](pics/expressions/codex_permission.png) | ![codex success](pics/expressions/codex_success.png) | ![codex error](pics/expressions/codex_error.png) | ![codex multi](pics/expressions/codex_multi.png) |
+| ![codex sleeping](pics/expressions/codex_sleeping.png) | ![codex thinking](pics/expressions/codex_thinking.png) | ![codex reading](pics/expressions/codex_reading.png) | ![codex writing](pics/expressions/codex_writing.png) |
+| **shell** | **permission** | **blocked** | **error** |
+| ![codex shell](pics/expressions/codex_shell.png) | ![codex permission](pics/expressions/codex_permission.png) | ![codex blocked](pics/expressions/codex_blocked.png) | ![codex error](pics/expressions/codex_error.png) |
+| **success** | **compact** | **subagent** | **multi** |
+| ![codex success](pics/expressions/codex_success.png) | ![codex compact](pics/expressions/codex_compact.png) | ![codex subagent](pics/expressions/codex_subagent.png) | ![codex multi](pics/expressions/codex_multi.png) |
+| **usage_low** | **usage_critical** | | |
+| ![codex usage_low](pics/expressions/codex_usage_low.png) | ![codex usage_critical](pics/expressions/codex_usage_critical.png) | | |
 
-All 14 states × 2 styles live in `pics/expressions/`. For a live, animated preview (breathing, blinks, scanlines all in motion, no hardware required), open `tools/cc_mochi_expression_preview.html` in a browser.
+That's all 14 states × the Claude / Codex styles. For a live, animated preview (breathing, blinks, scanlines all in motion, no hardware required), open `tools/cc_mochi_expression_preview.html` in a browser.
 
 ## Gallery
 
