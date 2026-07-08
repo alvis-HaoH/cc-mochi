@@ -122,7 +122,7 @@ class MochiDaemon:
         )
 
     def _send_idle(self) -> None:
-        self._send({"type": "state", "source": "cc", "state": "sleeping", "label": "idle", "active": 0})
+        self._send({"type": "state", "source": "claude", "state": "sleeping", "label": "idle", "active": 0})
 
     def _send(self, payload: dict[str, Any]) -> None:
         try:

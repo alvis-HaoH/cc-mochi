@@ -488,12 +488,6 @@
     const stateRoot = document.getElementById('stateButtons');
     stateRoot.appendChild(makeAgentMatrix('codex'));
     stateRoot.appendChild(makeAgentMatrix('claude'));
-    {
-      const buttons = document.createElement('div');
-      buttons.className = 'buttons';
-      buttons.appendChild(makeButton('cc sleeping', {type:'state', source:'cc', state:'sleeping', label:'idle', active:0}));
-      stateRoot.appendChild(buttons);
-    }
     for (const [label, payload] of usages) {
       document.getElementById('usageButtons').appendChild(makeButton(label, payload));
     }

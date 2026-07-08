@@ -68,7 +68,7 @@ uint8_t  animSpeed    = 1;   // 1=slow(default) 2=normal 3=fast
 uint16_t animBgColor  = 0;   // background for eye/logo animations
 uint16_t drawBgColor  = 0;   // background for canvas
 
-String   ccSource      = "cc";
+String   ccSource      = "claude";
 String   ccState       = "sleeping";
 String   ccLabel       = "idle";
 uint8_t  ccActive      = 0;
@@ -80,6 +80,10 @@ String   usageBadge    = "";
 bool     usageUnavailable = false;
 bool     usageStale       = false;
 String   serialLine;
+
+// Full-screen status repaints are visible on small ST7789 modules.
+// Keep the hardware face stable by default; redraw only when state changes.
+#define STATUS_LIVE_ANIM 0
 
 // ── Status face animation (non-blocking, millis-driven) ───────
 struct StatusAnim {
@@ -170,7 +174,7 @@ static const int16_t LOGO_SEGS[][4] PROGMEM = {
 
 int speedMs(int ms) {
   if (animSpeed == 3) return ms / 2;
-  if (animSpeed == 1) return ms * 2;
+  if (animSpeed == 1) return ms * 4;
   return ms;
 }
 
@@ -187,8 +191,8 @@ void setBacklight(bool on) {
 }
 
 void initColours() {
-  // Claude signature coral orange #D97757 (was 218,17,0 pure red)
-  C_ORANGE = tft.color565(217, 119, 87);
+  // Warm red-orange tuned for the ST7789 panel: less red than #DA1100, less yellow than #AA4818.
+  C_ORANGE = tft.color565(199, 53, 0);
   C_DARKBG = tft.color565(10,  12,  16);
   C_MUTED  = tft.color565(90,  88,  86);
   C_GREEN  = tft.color565(80, 220, 130);
@@ -532,7 +536,7 @@ uint16_t stateAccent(const String& state, const AgentTheme& theme) {
 AgentTheme agentTheme(String source) {
   AgentTheme theme;
   theme.codex = isCodexSource(source);
-  theme.claude = isClaudeSource(source);
+  theme.claude = !theme.codex;
   if (theme.codex) {
     theme.bg = C_BLACK;
     theme.face = C_GREEN;
@@ -541,9 +545,9 @@ AgentTheme agentTheme(String source) {
     theme.card = tft.color565(10, 16, 12);
   } else if (theme.claude) {
     theme.bg = C_ORANGE;
-    theme.face = tft.color565(28, 24, 20);
-    theme.accent = tft.color565(36, 26, 18);
-    theme.soft = tft.color565(255, 222, 188);
+    theme.face = C_BLACK;
+    theme.accent = C_BLACK;
+    theme.soft = C_WHITE;
     theme.card = C_ORANGE;
   } else {
     theme.bg = C_ORANGE;
@@ -689,9 +693,7 @@ void drawCodexMouth(const String& state, uint16_t f) {
 
 // Codex-only CRT scanline sweeping the face (mechanical, never warm)
 void drawCodexScanline(const String& state, uint16_t line) {
-  if (state == "error" || state == "usage_critical" || state == "sleeping") return;
-  int16_t y = 60 + ((millis() / 26) % 160);
-  tft.drawFastHLine(38, y, 164, line);   // faint band; overlap with eyes is brief while sweeping
+  return;
 }
 
 void drawCodexExpression(const String& state, const AgentTheme& theme) {
@@ -759,7 +761,7 @@ void drawClaudeBlush(const String& state, const AgentTheme& theme) {
   if (state == "error" || state == "usage_critical" || state == "blocked") return;
   int16_t y = 152 + anim.breathY;
   bool bright = (state == "success");
-  uint16_t c = bright ? tft.color565(214, 84, 58) : tft.color565(198, 96, 74);
+  uint16_t c = bright ? tft.color565(255, 107, 53) : tft.color565(196, 104, 73);
   tft.fillCircle(72, y, bright ? 11 : 9, c);
   tft.fillCircle(168, y, bright ? 11 : 9, c);
 }
@@ -772,7 +774,7 @@ void drawClaudeExpression(const String& state, const AgentTheme& theme) {
   if (state == "sleeping" || state == "idle") {
     drawArcLine(lx + 17, baseY + 24, 18, 200, 340, 3, face);
     drawArcLine(rx + 17, baseY + 24, 18, 200, 340, 3, face);
-    tft.setTextColor(tft.color565(255, 210, 160)); tft.setTextSize(2);
+    tft.setTextColor(theme.soft); tft.setTextSize(2);
     tft.setCursor(176, 76); tft.print("z");
     tft.setCursor(196, 58); tft.print("Z");
     return;
@@ -889,7 +891,7 @@ void drawMultiProp(const AgentTheme& theme) {
   int16_t ys[3] = {198, 212, 226}, x0 = 62, x1 = 178;
   int16_t span = x1 - x0;
   float speeds[3] = {0.42f, 0.55f, 0.36f};
-  float tSec = millis() / 1000.0f;
+  float tSec = millis() / (float)speedMs(1000);
   for (uint8_t i = 0; i < 3; i++) {
     int16_t y = ys[i];
     if (theme.codex) {
@@ -1019,8 +1021,8 @@ void drawActivityCorner(const String& state, uint8_t active, const AgentTheme& t
   bool hasSubagent = (state == "subagent");
   bool hasMulti = (state == "multi" || active > 1);
   if (!hasSubagent && !hasMulti) return;
-  uint16_t bg = theme.codex ? tft.color565(8, 18, 11) : tft.color565(245, 126, 70);
-  uint16_t col = theme.codex ? C_GREEN : tft.color565(36, 26, 18);
+  uint16_t bg = theme.codex ? tft.color565(8, 18, 11) : tft.color565(196, 104, 73);
+  uint16_t col = theme.codex ? C_GREEN : theme.face;
   tft.fillRoundRect(174, 12, 54, 28, 7, bg);
   tft.drawRoundRect(174, 12, 54, 28, 7, col);
   if (hasSubagent) {
@@ -1033,11 +1035,25 @@ void drawActivityCorner(const String& state, uint8_t active, const AgentTheme& t
   }
 }
 
+void drawStatusLabel(const String& state, const AgentTheme& theme) {
+  String label = shortText(visualState(state), 18);
+  uint16_t bg = statusBgForState(state, theme);
+  uint16_t col = theme.codex ? theme.face : theme.face;
+  int16_t w = label.length() * 12;
+  int16_t x = max((int16_t)4, (int16_t)((DISP_W - w) / 2));
+  tft.fillRect(x - 4, 6, w + 8, 18, bg);
+  tft.setTextColor(col);
+  tft.setTextSize(2);
+  tft.setCursor(x, 7);
+  tft.print(label);
+}
+
 void drawStatusView() {
   currentView = VIEW_CC_STATUS;
   termMode = false;
   AgentTheme theme = agentTheme(ccSource);
   tft.fillScreen(statusBgForState(ccState, theme));
+  drawStatusLabel(ccState, theme);
   drawActivityCorner(ccState, ccActive, theme);   // face is the main signal; no top-left icon layer
   drawStatusExpression(ccState, theme);
   drawStatusProp(ccState, theme);
@@ -1750,6 +1766,7 @@ void applyCcState(String source, String state, String label, int active) {
   source.toLowerCase();
   state.toLowerCase();
   state.replace("-", "_");
+  if (!isCodexSource(source) && !isClaudeSource(source)) source = "claude";
   ccSource = shortText(source, 10);
   ccState = shortText(state, 20);
   ccLabel = shortText(label, 20);
@@ -1774,7 +1791,7 @@ void applyUsage(String provider, int primary, int secondary, String reset, Strin
 
 void routeCcState() {
   applyCcState(
-    server.hasArg("source") ? server.arg("source") : "cc",
+    server.hasArg("source") ? server.arg("source") : "claude",
     server.hasArg("state") ? server.arg("state") : "thinking",
     server.hasArg("label") ? server.arg("label") : "",
     server.hasArg("active") ? server.arg("active").toInt() : 1);
@@ -1882,7 +1899,7 @@ void handleJsonLine(String line) {
   String type = jsonStringValue(line, "type", "");
   if (type == "state") {
     applyCcState(
-      jsonStringValue(line, "source", "cc"),
+      jsonStringValue(line, "source", "claude"),
       jsonStringValue(line, "state", "thinking"),
       jsonStringValue(line, "label", ""),
       jsonIntValue(line, "active", 1));
@@ -2002,18 +2019,21 @@ void setup() {
 // Recomputes breath / blink / pupil from millis() and repaints the status view.
 void tickStatusAnim() {
   if (currentView != VIEW_CC_STATUS || termMode) return;
+#if !STATUS_LIVE_ANIM
+  return;
+#endif
   uint32_t now = millis();
-  if (now - anim.lastTickMs < 90) return;   // ~11fps repaint cap
+  if (now - anim.lastTickMs < (uint32_t)speedMs(90)) return;
   anim.lastTickMs = now;
 
   String vs = visualState(ccState);
 
   // breathing triangle wave -> -2..2, period depends on state
-  uint32_t period = 3500;
-  if (vs == "sleeping") period = 5200;
-  else if (vs == "error" || vs == "usage_critical") period = 1100;
-  else if (vs == "blocked") period = 6000;
-  else if (vs == "success" || vs == "permission") period = 2600;
+  uint32_t period = speedMs(3500);
+  if (vs == "sleeping") period = speedMs(5200);
+  else if (vs == "error" || vs == "usage_critical") period = speedMs(2200);
+  else if (vs == "blocked") period = speedMs(6000);
+  else if (vs == "success" || vs == "permission") period = speedMs(3600);
   float bp = (float)(now % period) / period;      // 0..1
   float tri = 1.0f - fabs(bp * 2.0f - 1.0f);       // 0..1..0
   anim.breathY = (int8_t)lroundf((tri - 0.5f) * 4.0f);
@@ -2025,10 +2045,10 @@ void tickStatusAnim() {
   if (canBlink) {
     if (now - anim.lastBlinkMs > anim.blinkGap) {
       anim.lastBlinkMs = now;
-      anim.blinkGap = 1800 + (uint32_t)random(3200);
-      if (random(100) < 15) anim.blinkGap = 220;   // occasional double blink
+      anim.blinkGap = (uint32_t)speedMs(1800 + (int)random(3200));
+      if (random(100) < 15) anim.blinkGap = (uint32_t)speedMs(220);   // occasional double blink
     }
-    anim.blinking = (now - anim.lastBlinkMs) < 120;
+    anim.blinking = (now - anim.lastBlinkMs) < (uint32_t)speedMs(120);
   }
 
   // pupil drift by state (Codex snaps, Claude glides — handled in eye drawing)
@@ -2036,8 +2056,8 @@ void tickStatusAnim() {
   if (vs == "thinking") anim.pupilDY = -4;
   else if (vs == "writing") anim.pupilDY = 4;
   else if (vs == "shell") anim.pupilDX = -4;
-  else if (vs == "reading") anim.pupilDX = (int8_t)lroundf(sin(now / 700.0) * 6);
-  else if (vs == "permission") anim.pupilDX = (int8_t)lroundf(sin(now / 260.0) * 5);
+  else if (vs == "reading") anim.pupilDX = (int8_t)lroundf(sin(now / (float)speedMs(700)) * 6);
+  else if (vs == "permission") anim.pupilDX = (int8_t)lroundf(sin(now / (float)speedMs(520)) * 5);
 
   drawStatusView();
 }
